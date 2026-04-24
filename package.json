@@ -1,6 +1,6 @@
 {
   "name": "@vikingokft/auth-client",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Client library for vikingo-auth-server. Drop-in Google Workspace SSO for Next.js apps and Node CLIs.",
   "type": "module",
   "sideEffects": false,
