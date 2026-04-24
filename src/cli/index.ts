@@ -49,6 +49,8 @@ function openBrowser(url: string): void {
   exec(cmd, () => {})
 }
 
+const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes — user has this long to complete Google login
+
 async function runLocalCallback(port: number, expectedPath: string): Promise<{ code: string }> {
   return new Promise((resolve, reject) => {
     const server = createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -68,8 +70,9 @@ async function runLocalCallback(port: number, expectedPath: string): Promise<{ c
           <style>body{font-family:system-ui;background:#0a0a0a;color:#fafafa;padding:40px;text-align:center}</style>
           <h1>Hiba</h1><p>Hiányzó auth code. Próbáld újra.</p>`,
         )
-        reject(new Error('no code'))
+        clearTimeout(timer)
         server.close()
+        reject(new Error('no code'))
         return
       }
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(
@@ -80,11 +83,19 @@ async function runLocalCallback(port: number, expectedPath: string): Promise<{ c
         <h1>Sikeres bejelentkezés</h1><p>Ezt az ablakot bezárhatod, vissza a terminálhoz.</p>
         <script>setTimeout(()=>window.close(),2000)</script>`,
       )
+      clearTimeout(timer)
       server.close()
       resolve({ code })
     })
+    const timer = setTimeout(() => {
+      server.close()
+      reject(new Error(`login timed out after ${CALLBACK_TIMEOUT_MS / 1000}s`))
+    }, CALLBACK_TIMEOUT_MS)
     server.listen(port, '127.0.0.1')
-    server.on('error', reject)
+    server.on('error', (err) => {
+      clearTimeout(timer)
+      reject(err)
+    })
   })
 }
 
@@ -100,7 +111,15 @@ export async function requireSSO(options: RequireSSOOptions): Promise<Session> {
       try {
         const status = await syncUserStatus(config, cached.user.sub)
         if (status === 'active') return cached.user
-      } catch {
+        if (status === 'suspended' || status === 'deleted') {
+          throw new Error(
+            `Workspace fiókod státusza: ${status}. Ehhez a CLI-hez nincs hozzáférésed. Lépj kapcsolatba az adminnal.`,
+          )
+        }
+      } catch (err) {
+        // Sync failure (network, server down) → fall back to cached token, don't block work.
+        // Suspended/deleted is a real auth failure — re-throw.
+        if (err instanceof Error && err.message.includes('Workspace fiókod státusza')) throw err
         return cached.user
       }
     }

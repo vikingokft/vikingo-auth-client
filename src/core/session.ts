@@ -1,7 +1,9 @@
-import { base64url, jwtVerify, SignJWT } from 'jose'
+import { jwtVerify, SignJWT } from 'jose'
 import type { ResolvedConfig } from './config'
 import type { Session } from './types'
 
+// HKDF info string — versioned, so we can rotate session key derivation in the future
+// without breaking valid cookies signed by the old version (would need v2 fallback logic).
 const SESSION_KEY_INFO = 'vikingo-auth-session-v1'
 
 async function deriveFromSecret(secret: string): Promise<Uint8Array> {
@@ -13,6 +15,9 @@ async function deriveFromSecret(secret: string): Promise<Uint8Array> {
     false,
     ['deriveBits'],
   )
+  // Empty salt is intentional: we want a deterministic key per app, so the same
+  // input (clientSecret OR appId) always produces the same session-signing key.
+  // Different apps still get different keys because the input differs.
   const bits = await crypto.subtle.deriveBits(
     {
       name: 'HKDF',
@@ -60,5 +65,3 @@ export async function unpackSession(
     return null
   }
 }
-
-export { base64url }

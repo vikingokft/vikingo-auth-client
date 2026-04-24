@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-04-24
+
+### Javítva
+- **CLI**: a `runLocalCallback` mostantól 5 perces timeout-ot tart. Korábban végtelen ideig várt, ha a user nem fejezte be a Google login-t.
+- **CLI**: ha a `/sync` válasza `suspended` vagy `deleted`, a `requireSSO` clear hibaüzenettel kilép. Korábban újra Google login-ra próbált menni, ami szintén meghiúsult volna.
+
+### Eltávolítva
+- Holt `base64url` re-export a `core/session.ts`-ben.
+
+### Doc
+- HKDF info string komment hozzáadva (verziózás magyarázata).
+
 ## [0.4.0] - 2026-04-24
 
 ### Változott (BREAKING csak akkor, ha korábban kötelezőként kezelted a clientSecret-et — API kompatibilis marad)
