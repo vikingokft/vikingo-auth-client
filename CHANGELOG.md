@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-04-24
+
+### Változott
+- **Signed provenance visszakapcsolva** (`publishConfig.provenance: true`). A `vikingo-auth-client` repo public lett, az npm csomag oldalán mostantól látszik a "Built and signed on GitHub Actions" badge a sigstore transparency log linkjével. Supply chain tamper-evidence.
+
 ## [0.5.2] - 2026-04-24
 
 ### Változott

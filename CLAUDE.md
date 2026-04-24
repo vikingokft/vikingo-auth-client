@@ -136,7 +136,7 @@ Ha a Trusted Publisher beállítást újra kell konfigurálni: https://www.npmjs
 
 **Auth a fogyasztáshoz** (klienseknek): **nincs**. Public csomag, `npm install` elegendő.
 
-**Provenance**: jelenleg KI van kapcsolva (privát source repo nem támogatja az npm signed provenance-t). Ha a `vikingo-auth-client` repót public-ra állítjuk, a `publishConfig`-ban visszakapcsolható a `"provenance": true`.
+**Provenance**: BE van kapcsolva (`publishConfig.provenance: true`). Minden publish aláírt sigstore attestation-t generál, az npm csomag oldalán látszik a "Built and signed on GitHub Actions" badge.
 
 ---
 
