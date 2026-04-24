@@ -2,13 +2,15 @@
 
 Ez a dokumentum pontosan leírja, hogyan köss be egy **belső vikingo eszközt** a `vikingoauth.hu` központi SSO-hoz. Két forgatókönyv: (1) **meglévő** app migrálása, (2) **új** projekt induláskor.
 
+> **v0.3.0 óta egyszerűsítve**: Vercel-en csak **1 per-project env var** kell (`VIKINGO_AUTH_CLIENT_SECRET`), a `NODE_AUTH_TOKEN` pedig Vercel Team Shared env vélről jön.
+
 Minden migráció ugyanarra az 5 lépésre épül:
 
 1. **Regisztráld az appot** a szerveren (kapsz egy `client_secret`-et)
 2. **Adj hozzá `.npmrc`**-t a GitHub Packages-hez
 3. **Telepítsd a `@vikingokft/auth-client` csomagot**
 4. **Készíts `middleware.ts`-t** a megfelelő runtime-hoz (Next.js / Vercel edge / CLI)
-5. **Állítsd be az env változókat** (helyben `.env.local`, éles/preview Vercel Dashboard-on)
+5. **Állítsd be az env változókat** (csak 1 per project, plusz a team-wide `NODE_AUTH_TOKEN`)
 
 ---
 
@@ -97,9 +99,6 @@ Helyezd a projekt gyökerébe (NEM a `src/` alá, akkor sem ha van `src/app/`).
 import { vikingoAuth } from '@vikingokft/auth-client/next'
 
 export default vikingoAuth({
-  appId: process.env.VIKINGO_AUTH_APP_ID!,
-  clientSecret: process.env.VIKINGO_AUTH_CLIENT_SECRET!,
-  sessionSecret: process.env.VIKINGO_AUTH_SESSION_SECRET!,
   publicPaths: [
     '/api/public',
     /^\/_next\//,
@@ -111,6 +110,8 @@ export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 }
 ```
+
+A csomag automatikusan veszi a `VIKINGO_AUTH_CLIENT_SECRET` env-et, és Vercel-en a `VERCEL_GIT_REPO_SLUG`-ot használja `appId`-ként.
 
 **Tipp**: ha van publikus API endpoint (pl. webhook-fogadó), add a `publicPaths`-be a prefix-ét.
 
@@ -127,9 +128,6 @@ export const config = {
 }
 
 export default vikingoEdgeAuth({
-  appId: process.env.VIKINGO_AUTH_APP_ID!,
-  clientSecret: process.env.VIKINGO_AUTH_CLIENT_SECRET!,
-  sessionSecret: process.env.VIKINGO_AUTH_SESSION_SECRET!,
   publicPaths: ['/api/health', '/api/public'],
 })
 ```
@@ -174,37 +172,38 @@ Első futtatáskor **böngésző nyílik** → Google login → token mentődik 
 cat > .env.local <<EOF
 VIKINGO_AUTH_APP_ID=my-app-name
 VIKINGO_AUTH_CLIENT_SECRET=<a lépés 1-ből kapott secret>
-VIKINGO_AUTH_SESSION_SECRET=$(openssl rand -hex 32)
 EOF
 ```
 
-A `VIKINGO_AUTH_SESSION_SECRET`-et **minden projektben külön** generáld — ne oszd meg appok között.
+**Helyben** a `VIKINGO_AUTH_APP_ID` kell, mert a `VERCEL_GIT_REPO_SLUG` env csak Vercel-en elérhető automatikusan. Éles/preview Vercel deploynál nem kell.
 
-### Vercel Dashboard (Production / Preview / Development)
+### Vercel — 1x setup a Team szinten
 
-1. Vercel Dashboard → a projekt → **Settings → Environment Variables**
-2. Add meg a 4 változót **mind a 3 környezetre** (Production + Preview + Development):
-   - `VIKINGO_AUTH_APP_ID` — az app_id amit regisztráltál
-   - `VIKINGO_AUTH_CLIENT_SECRET` — a regisztrációnál kapott secret
-   - `VIKINGO_AUTH_SESSION_SECRET` — `openssl rand -hex 32` kimenete
-   - `NODE_AUTH_TOKEN` — GitHub Personal Access Token `read:packages` scope-pal, hogy build közben le tudja tölteni a privát csomagot
+Ezt **csak egyszer** kell, minden projekt örökli. Vercel Dashboard → **Team Settings → Shared Environment Variables** → add:
 
-### GitHub PAT (`NODE_AUTH_TOKEN`)
+- `NODE_AUTH_TOKEN` — GitHub PAT `read:packages` scope-pal (lásd alább)
 
-Egyszer kell létrehozni, minden app ugyanazt használhatja:
+### Vercel — per project env
+
+Minden új projektnél csak **1 env var** kell, mind a 3 környezetre (Production + Preview + Development):
+
+- `VIKINGO_AUTH_CLIENT_SECRET` — a regisztrációnál kapott titok
+
+### GitHub PAT (`NODE_AUTH_TOKEN`, csak 1x)
+
+Ha még nem hoztál létre egyet:
 
 1. https://github.com/settings/tokens/new
 2. **Note**: `Vercel GitHub Packages read`
 3. **Expiration**: `No expiration`
 4. **Select scopes**: `read:packages` **(csak ez)**
-5. **Generate token** → másold ki
-6. Tedd biztonságos helyre (jelszókezelő)
-7. Vercel env-ként állítsd be minden projektnél
+5. **Generate token** → másold ki és tedd a Vercel Team Shared env-be mint `NODE_AUTH_TOKEN`
 
 ### Node CLI (nincs Vercel)
 
 A CLI felhasználóinak a gépén kell lennie:
-- `VIKINGO_AUTH_CLIENT_SECRET` — shell env-ben, pl. `.zshrc`-ben exportálva vagy projekt `.env`-ben
+- `VIKINGO_AUTH_APP_ID` — a CLI neve
+- `VIKINGO_AUTH_CLIENT_SECRET` — shell env-ben, pl. `.zshrc`-ben exportálva
 
 ---
 
