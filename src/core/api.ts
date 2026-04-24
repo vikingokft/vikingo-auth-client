@@ -5,14 +5,16 @@ export async function exchangeCodeForToken(
   config: ResolvedConfig,
   code: string,
 ): Promise<TokenResponse> {
+  const body: Record<string, string> = {
+    code,
+    client_id: config.appId,
+  }
+  if (config.clientSecret) body.client_secret = config.clientSecret
+
   const res = await fetch(`${config.authServer}/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      code,
-      client_id: config.appId,
-      client_secret: config.clientSecret,
-    }),
+    body: JSON.stringify(body),
   })
 
   if (!res.ok) {
@@ -27,14 +29,16 @@ export async function syncUserStatus(
   config: ResolvedConfig,
   sub: string,
 ): Promise<SyncResponse['status']> {
+  const body: Record<string, string> = {
+    sub,
+    client_id: config.appId,
+  }
+  if (config.clientSecret) body.client_secret = config.clientSecret
+
   const res = await fetch(`${config.authServer}/sync`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      sub,
-      client_id: config.appId,
-      client_secret: config.clientSecret,
-    }),
+    body: JSON.stringify(body),
   })
 
   if (!res.ok) {

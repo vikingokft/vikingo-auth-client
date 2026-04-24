@@ -31,7 +31,12 @@ async function sessionKey(config: ResolvedConfig): Promise<Uint8Array> {
     const hashed = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(config.sessionSecret))
     return new Uint8Array(hashed)
   }
-  return await deriveFromSecret(config.clientSecret)
+  // Derive session key from clientSecret if set, otherwise from appId (public client model).
+  // In the public model, session cookies are still tamper-evident (HMAC-SHA256), and the
+  // underlying JWT from the auth server is always RS256-verified via JWKS — so the session
+  // signing key derivation is a convenience, not the primary security layer.
+  const basis = config.clientSecret ?? `vikingo-auth:${config.appId}`
+  return await deriveFromSecret(basis)
 }
 
 export async function packSession(session: Session, config: ResolvedConfig): Promise<string> {

@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-04-24
+
+### Változott (BREAKING csak akkor, ha korábban kötelezőként kezelted a clientSecret-et — API kompatibilis marad)
+- **Public client model**: a `clientSecret` teljesen opcionálissá vált. A szerver már nem kötelezően validálja. A biztonsági rétegek továbbra is: Workspace SSO, regisztrált callback URLs, single-use 120s TTL auth code, rate limiting.
+- **Session key**: ha nincs `clientSecret` sem `sessionSecret`, a session cookie aláíró kulcsa az `appId`-ből deriválódik (HKDF-SHA256). Determinisztikus per app.
+
+### Hozzáadva
+- **Zero-env-var Vercel setup**: új app bekötésekor **semmilyen** env var beállítás nem szükséges Vercel-en per project. Csak a team-level `NODE_AUTH_TOKEN` kell a build-idejű csomag telepítéshez.
+
+### Frissíthető megjegyzés
+A `VIKINGO_AUTH_CLIENT_SECRET` env var továbbra is támogatott — ha be van állítva, a csomag elküldi a szervernek mint extra auth layer. Ezt a régi appok megtarthatják, újak nem kell beállítsák.
+
 ## [0.3.1] - 2026-04-24
 
 ### Javítva
