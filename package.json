@@ -1,12 +1,13 @@
 {
   "name": "@vikingokft/auth-client",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Client library for vikingo-auth-server. Drop-in Google Workspace SSO for Next.js apps and Node CLIs.",
   "type": "module",
   "sideEffects": false,
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
+    "registry": "https://registry.npmjs.org",
+    "access": "public",
+    "provenance": true
   },
   "repository": {
     "type": "git",
