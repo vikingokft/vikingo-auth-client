@@ -1,78 +1,182 @@
-# CLAUDE.md
+# CLAUDE.md — vikingo-auth-client
 
-## Mit csinál
+Kliens oldali npm csomag a `vikingoauth.hu` szerverhez. Drop-in Google Workspace SSO Next.js + Vercel edge + Node CLI alkalmazásokhoz.
 
-`@vikingokft/auth-client` a [vikingo-auth-server](https://github.com/vikingokft/vikingo-auth-server) kliense. Drop-in SSO csomag Next.js appokhoz és Node CLI-khez. A belső vikingo eszközök használják ezt, hogy 3 sor kóddal Google Workspace SSO-ba kerüljenek.
+Csomag: `@vikingokft/auth-client` (GitHub Packages, privát, scope `@vikingokft`).
 
-## Három entry point
+---
 
-A `package.json` `exports` mezője 3 alcsomagot exportál:
-- **`@vikingokft/auth-client`** (root) — alacsony szintű: verify, api hívások, session pack/unpack
-- **`@vikingokft/auth-client/next`** — Next.js middleware + server helpers (`getUser`, `requireUser`)
-- **`@vikingokft/auth-client/cli`** — `requireSSO` CLI flow localhost callback-kel
+## Három alcsomag
 
-A `next` alcsomag `next`-et mint peer dependency használja (opcionális — CLI-s csomagok nem húzzák be).
+`package.json` `exports` mező 3 entry pointot exportál:
 
-## Hol él
+| Import | Kinél használd | Runtime |
+|---|---|---|
+| `@vikingokft/auth-client` | core API hívások, alacsony szintű | bárhol |
+| `@vikingokft/auth-client/next` | Next.js 14+ App/Pages Router | edge middleware + server components |
+| `@vikingokft/auth-client/edge` | Next.js NÉLKÜLI Vercel projekt, Cloudflare Worker, Deno Deploy | bármely Web API edge runtime |
+| `@vikingokft/auth-client/cli` | Node CLI eszközök | Node 20+ runtime, `node:http` localhost callback |
 
-- **Repo**: `vikingokft/vikingo-auth-client` (privát)
-- **Publikáció**: GitHub Packages, `@vikingokft/auth-client`
-- **Build**: `tsc -p tsconfig.build.json` → `dist/`
-- **ESM-only** — no CommonJS build
+`next` peer dependency **opcionális** — CLI/edge appok nem húzzák be.
+
+---
+
+## Architektúra
+
+```
+client app                    @vikingokft/auth-client                vikingoauth.hu
+─────────────                 ───────────────────────                ──────────────
+no session cookie?
+  middleware/getUser ─────▶ buildAuthorizeUrl ────────▶ /authorize
+                                                            │
+                                                            ▼
+                                                        Google OAuth
+                                                            │
+  middleware /auth/callback ◀─────────────────────────  /callback
+                              code in query string
+                                                       (single-use code,
+                                                        TTL 120s)
+  middleware ──── exchangeCodeForToken ──────────────▶ /token
+              ◀── { access_token: JWT, user } ────────  RS256 sign
+                                                            │
+  verifyAuthJwt (JWKS-sel) ◀── /jwks.json ────────────────  publik key
+              │
+              ▼
+  packSession (HS256, derived key) ──▶ httpOnly cookie ✓
+
+Subsequent requests:
+  middleware ──unpackSession (HMAC verify) ───▶ session valid?
+              ───── periodikus /sync (300s) ──▶ /sync ──▶ {active|suspended|deleted}
+```
+
+---
+
+## Két különböző JWT a rendszerben
+
+| JWT típus | Algoritmus | Kibocsátó | Cél |
+|---|---|---|---|
+| **Auth-server JWT** | RS256 | `vikingoauth.hu` | A `/token` endpoint adja vissza. Aszimmetrikus — kliensek csak verifikálni tudják (JWKS), kibocsátani nem. Audience = `app_id`. |
+| **Session cookie JWT** | HS256 | a kliens app maga | HttpOnly Secure SameSite=Lax cookie. Saját HMAC kulcs (derived `appId`-ből vagy `clientSecret`-ből vagy explicit `sessionSecret`-ből). |
+
+A flow: Google → szerver-JWT (RS256) → kliens újra-csomagol HS256-tal session cookie-ba. Így nem kell minden requestnél a szervert hívni; a kliens offline tudja verifikálni a sessiont.
+
+---
 
 ## Fájlstruktúra
 
 ```
 src/
-  index.ts          # core entry (config, api, verify, session)
+  index.ts                    core re-exports
   core/
-    config.ts       # AuthConfig + resolveConfig + AUTH_SERVER_BASE
-    types.ts        # AuthedUser, TokenResponse, SyncResponse, Session
-    verify.ts       # verifyAuthJwt — remote JWKS-sel
-    api.ts          # exchangeCodeForToken, syncUserStatus, buildAuthorizeUrl
-    session.ts      # packSession/unpackSession — HS256 self-signed cookie
+    config.ts                 AuthConfig, resolveConfig, appId/clientSecret resolution + Vercel env fallbacks
+    types.ts                  AuthedUser, TokenResponse, SyncResponse, Session
+    verify.ts                 verifyAuthJwt (remote JWKS + jose jwtVerify)
+    api.ts                    exchangeCodeForToken, syncUserStatus, buildAuthorizeUrl
+    session.ts                packSession/unpackSession (HS256), HKDF-derived key from clientSecret OR appId
   next/
-    index.ts        # public re-export
-    middleware.ts   # vikingoAuth() — NextRequest → NextResponse
-    server.ts       # getUser, requireUser, getUserFromHeaders
+    index.ts                  public re-export
+    middleware.ts             vikingoAuth() — NextRequest → NextResponse, lazy config resolution
+    server.ts                 getUser, requireUser, getUserFromHeaders (Server Component helpers)
+  edge/
+    index.ts                  public re-export
+    middleware.ts             vikingoEdgeAuth() — standard Web Request → Response, lazy config
   cli/
-    index.ts        # requireSSO() — localhost callback + cache
+    index.ts                  requireSSO() — localhost callback (default port 53781), token cache ~/.vikingo/<appId>.json
 ```
+
+---
+
+## Config resolution sorrendje (`resolveConfig`)
+
+| Mező | Forrás priority |
+|---|---|
+| `appId` | (1) `cfg.appId` arg (2) `process.env.VIKINGO_AUTH_APP_ID` (3) `process.env.VERCEL_GIT_REPO_SLUG` (4) `process.env.VERCEL_PROJECT_PRODUCTION_URL` subdomain (5) `process.env.VERCEL_URL` subdomain |
+| `clientSecret` | (1) `cfg.clientSecret` arg (2) `process.env.VIKINGO_AUTH_CLIENT_SECRET` (3) **undefined** (public client model) |
+| `sessionSecret` | csak ha explicit, máskülönben derived |
+| `authServer` | default `https://vikingoauth.hu` |
+| `sessionCookieName` | default `vikingo_auth` |
+| `syncIntervalSeconds` | default `300` (5 perc) |
+
+A config **lazy** — csak az első request-kor resolválódik (modulbetöltéskor NEM, mert pl. `VERCEL_GIT_REPO_SLUG` nem mindig elérhető module init-kor edge runtime-ban).
+
+---
+
+## Public client model (v0.4.0+)
+
+`clientSecret` **opcionális**. Ha nincs:
+- A `/token` és `/sync` requestek nem küldenek `client_secret` mezőt
+- A szerver csak az `app_id` és callback URL match-et nézi
+- A session cookie aláíró kulcs `appId`-ből deriválódik HKDF-SHA256-tal
+
+**Védelmi rétegek a public model-ben**:
+1. Workspace SSO (Google csak vikingo Workspace user-eket enged)
+2. Regisztrált `callback_urls` (code csak oda mehet)
+3. Single-use 120s TTL auth code (256-bit entrópia)
+4. Rate limit (20 req/IP/perc)
+5. Periodikus `/sync` user state check
+
+Belső, Workspace-en belül használt eszközökhöz **bőven elégséges**.
+
+---
+
+## Publikálás
+
+GitHub Packages, scope `@vikingokft`.
+
+```bash
+# Bump verzió + changelog
+# Edit: package.json version, CHANGELOG.md
+git tag v0.x.y && git push --tags
+# → GitHub Actions publish.yml → npm publish to GitHub Packages
+```
+
+**Auth a publikáláshoz**: a workflow `GITHUB_TOKEN`-t használ — automatikusan elérhető a runner-en, nincs külön setup.
+
+**Auth a fogyasztáshoz** (klienseknek): `.npmrc` `${NODE_AUTH_TOKEN}` placeholder-rel, és minden környezetben (helyben + Vercel build) egy GitHub PAT `read:packages` scope-pal.
+
+---
+
+## Frissítési flow
+
+`@vikingokft/auth-client` új release → minden consumer repó Dependabot-ja észreveszi (napi check):
+
+- **Patch (0.x.y → 0.x.y+1)**: PR auto-merge ha CI zöld
+- **Minor / Major**: manuális review
+
+A consumer repók `.github/dependabot.yml` config-ja csoportba szedi a `@vikingokft/*` PR-eket.
+
+---
 
 ## Kritikus tudnivalók
 
-### 1. Két külön JWT a rendszerben
-- **auth-server JWT (RS256)**: a vikingo-auth-server adja ki, `vikingoauth.hu` az issuer. Ezt a `/token` cseréből kapjuk és `verifyAuthJwt` ellenőrzi.
-- **Session cookie JWT (HS256)**: ezt magunk állítjuk elő a `sessionSecret`-tel, HttpOnly Secure cookie-ba mentjük. Nem a Google tokenjét tesszük sütibe.
+1. **Session key derivation v0.4.0-ban**: ha sem `clientSecret`, sem `sessionSecret` nincs → derived `appId`-ből (HKDF info `vikingo-auth-session-v1`). Ez determinisztikus, app-specifikus, és a session cookie még mindig HMAC-aláírt.
 
-A séma: Google → Worker → kliens RS256 JWT → kliens újra becsomagolja HS256-tel session cookie-ba. Így a kliensnek nem kell minden requestnél a Workert hívnia, offline verifikálhat.
+2. **ESM-only**: a csomag `"type": "module"`. Régi CommonJS Next.js project-be dynamic import kell. Next.js 14+ ESM natívan támogatott.
 
-### 2. Sync ciklus
-A middleware `config.syncIntervalSeconds` (alapból 300s) időközönként hív a `/sync`-ra a szervernél. Ha suspended/deleted, a cookie-t kitöröljük és relogra dobjuk. Ha a szerver nem elérhető, **engedélyezzük a kérést** (fault-tolerant) — az audit log látja, nem blokkolunk.
+3. **Lazy config**: a middleware moduljának betöltésekor NEM resolválódik a config (régen igen, ez okozta a `MIDDLEWARE_INVOCATION_FAILED`-et v0.3.0-ban). Most első request-kor cache-elődik.
 
-### 3. `sessionSecret` kötelező
-A middleware konstruktor kifejezetten hibát dob, ha nincs `sessionSecret`. Használd `openssl rand -hex 32`-t generálni. Per-app külön secret, nem szükséges megosztani az apps között.
+4. **CLI cache**: `~/.vikingo/<appId>.json`, mode `0o600`. Tartalom: token + user + savedAt. Lejárt token esetén automatikusan újra-bejelentkezik.
 
-### 4. Peer dependency `next`
-Az npm csomag `next`-et mint **optional peer dependency** jelöli. CLI-ben nem kell Next.js-nek lennie. TypeScript-ben mégis csak a `src/next/*` alatt importálunk `next/*`-ből, tehát ha a fogyasztó nem importál `/next` subpath-ot, nincs runtime dep.
+5. **Vercel `VERCEL_GIT_REPO_SLUG`** csak akkor available, ha a project Git Integration-nel van linkelve. Vercel CLI deploy esetén nem mindig. Fallback: `VERCEL_PROJECT_PRODUCTION_URL` parsing.
 
-### 5. ESM-only
-A csomag `"type": "module"`. Ha egy régi CommonJS Next.js projektbe húzzuk, dynamic import kell: `await import('@vikingokft/auth-client/next')`. A Next.js 14+ ESM-et native támogat, ez nem lesz probléma.
+6. **Backwards compat**: `clientSecret` opció megmaradt. Ha valaki külső appot köt be (nem belső), tudja használni a hagyományos secret-es flow-t.
 
-## Jövőbeni iterációk
+---
 
-Amit érdemes figyelni, mikor fejleszted:
+## Konvenciók
 
-- **Refresh tokenek** — jelenleg 1 órás lejárat után redirectelünk Google-re `prompt: 'select_account'`-tel. Lehetne csendes refresh, de körülményesebb.
-- **Szerepkör alapú access** — most bárki belép, aki Workspace user. Lehetne `getUser()` mellé `requireRole(['admin'])` vagy hasonló, ami Admin SDK-ból lekéri a user Workspace group tagságait.
-- **SWR/server-action integráció** — jelenleg a middleware minden kéréskor cookie-ból dekódol. Cache-elni lehetne.
+- Strict TypeScript: `noUncheckedIndexedAccess`, `verbatimModuleSyntax`
+- Build: `tsc -p tsconfig.build.json` → `dist/` (declaration + sourcemap)
+- Test: nincs még (TODO: vitest)
+- Commit üzenetek: angol imperatívusz, `feat:` / `fix:` / `chore:` / `docs:`
 
-## Deploy workflow
+---
 
-1. Bump version a `package.json`-ban + CHANGELOG
-2. `git tag v0.x.y && git push --tags`
-3. GitHub Actions publish workflow → GitHub Packages-re felmegy
-4. Fogyasztó appokban: Dependabot PR nyílik `@vikingokft/auth-client` bump-re
-5. Merge → app redeploy, új verzió élesben
+## Tipikus változtatások
 
-A publish token a GitHub Packages-hez `GITHUB_TOKEN` automatikusan adott a workflowban.
+| Mit | Hova |
+|---|---|
+| Új env var fallback `appId`-hez | `src/core/config.ts` `resolveAppId` |
+| Új middleware option | mindkét middleware-ben + `VikingoAuthOptions` / `VikingoEdgeAuthOptions` |
+| Új session field | `src/core/types.ts` `Session` + a packSession aktualizál |
+| CLI port változtatás | `src/cli/index.ts` default `localPort` |
