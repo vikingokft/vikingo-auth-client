@@ -303,6 +303,35 @@ A template **már tartalmazza**: `.npmrc`-t, `middleware.ts`-t, `package.json`-b
 
 ---
 
+## Új repo bekapcsolása a managed flow-ba
+
+Új vikingo SSO eszközt hoztál létre? A **`vikingokft` GitHub org-ban van egy `auth-managed` custom property**, ami automatikusan beállítja az új repóra:
+- `main` ág védelme (delete + force push tiltás)
+- `ci` status check kötelező merge előtt
+- Dependabot patch auto-merge (a workflow-fájlok a template-ből megjönnek)
+
+A bekapcsolás kétféleképpen:
+
+### A) GitHub UI
+
+1. Repo **Settings → General** → görgess a **Custom properties** szekcióig
+2. Keresd: `auth-managed` → pipáld ki **true**-ra
+3. Save
+
+### B) CLI
+
+```bash
+gh api -X PATCH /orgs/vikingokft/properties/values \
+  --input - <<EOF
+{
+  "repository_names": ["my-new-app"],
+  "properties": [{ "property_name": "auth-managed", "value": "true" }]
+}
+EOF
+```
+
+A ruleset azonnal alkalmazódik. Fontos: a repónak legyen **`ci` nevű GitHub Actions workflow**-ja (a `vikingo-auth-template` ezt már tartalmazza).
+
 ## Frissítés (patch-ek, új verziók)
 
 A `@vikingokft/auth-client` csomag automatikusan frissül minden repódban **Dependabot-tal**:
