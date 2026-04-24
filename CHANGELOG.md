@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-04-24
+
+### Változott
+- **Publish: npm Trusted Publishing (OIDC)**. A `publish.yml` workflow GitHub Actions OIDC tokennel auth-ol npm-re — nincs `NPM_TOKEN` secret, nincs token rotáció, nincs lejárat. Az npm csomag oldalán `vikingokft/vikingo-auth-client` repo + `publish.yml` workflow van Trusted Publisher-ként regisztrálva.
+
+## [0.5.1] - 2026-04-24
+
+### Változott (BREAKING disztribúciós oldalon)
+- **Registry váltás**: GitHub Packages (`npm.pkg.github.com`) → **public npmjs.com** (`registry.npmjs.org`, `access: public`). A csomag most már auth nélkül pull-olható bárhonnan — sem `.npmrc`, sem `NODE_AUTH_TOKEN` nem kell consumer oldalon.
+- A GitHub Packages-en a `0.5.0` az utolsó verzió, ott nem frissül tovább.
+
+### Migráció fogyasztóknak
+- Töröld a `.npmrc`-t (ha csak a `@vikingokft` scope-hoz volt), vagy vedd ki belőle a `@vikingokft:registry=...` és `//npm.pkg.github.com/:_authToken=...` sorokat.
+- Vercel-en a team-level `NODE_AUTH_TOKEN` env eltávolítható, ha már nincs GitHub Packages-ről pulled csomag.
+
 ## [0.5.0] - 2026-04-24
 
 ### Hozzáadva

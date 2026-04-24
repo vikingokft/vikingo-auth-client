@@ -2,7 +2,7 @@
 
 Kliens oldali npm csomag a `vikingoauth.hu` szerverhez. Drop-in Google Workspace SSO Next.js + Vercel edge + Node CLI alkalmazásokhoz.
 
-Csomag: `@vikingokft/auth-client` (GitHub Packages, privát, scope `@vikingokft`).
+Csomag: `@vikingokft/auth-client` (**public npm**, `registry.npmjs.org`, scope `@vikingokft`). Auth nélkül pull-olható consumer oldalon. v0.5.0 és korábbi verziók GitHub Packages-en voltak (ott nem frissülnek tovább).
 
 ---
 
@@ -121,18 +121,22 @@ Belső, Workspace-en belül használt eszközökhöz **bőven elégséges**.
 
 ## Publikálás
 
-GitHub Packages, scope `@vikingokft`.
+Public npm (`registry.npmjs.org`), scope `@vikingokft`, `access: public`.
 
 ```bash
 # Bump verzió + changelog
 # Edit: package.json version, CHANGELOG.md
 git tag v0.x.y && git push --tags
-# → GitHub Actions publish.yml → npm publish to GitHub Packages
+# → GitHub Actions publish.yml → npm publish (public registry)
 ```
 
-**Auth a publikáláshoz**: a workflow `GITHUB_TOKEN`-t használ — automatikusan elérhető a runner-en, nincs külön setup.
+**Auth a publikáláshoz**: **npm Trusted Publishing (OIDC)**. A workflow `id-token: write` permission-nel fut, az `npm` CLI runtime-ban OIDC tokent cserél npm-nél → nincs `NPM_TOKEN` secret, nincs lejárat, nincs rotáció.
 
-**Auth a fogyasztáshoz** (klienseknek): `.npmrc` `${NODE_AUTH_TOKEN}` placeholder-rel, és minden környezetben (helyben + Vercel build) egy GitHub PAT `read:packages` scope-pal.
+Ha a Trusted Publisher beállítást újra kell konfigurálni: https://www.npmjs.com/package/@vikingokft/auth-client/access → Trusted Publisher → Publisher: GitHub Actions, Org: `vikingokft`, Repo: `vikingo-auth-client`, Workflow: `publish.yml`.
+
+**Auth a fogyasztáshoz** (klienseknek): **nincs**. Public csomag, `npm install` elegendő.
+
+**Provenance**: jelenleg KI van kapcsolva (privát source repo nem támogatja az npm signed provenance-t). Ha a `vikingo-auth-client` repót public-ra állítjuk, a `publishConfig`-ban visszakapcsolható a `"provenance": true`.
 
 ---
 

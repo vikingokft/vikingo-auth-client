@@ -4,20 +4,13 @@ Kliens oldali csomag a [vikingo-auth-server](https://github.com/vikingokft/vikin
 
 ## Telepítés
 
-Mivel GitHub Packages-en van publikálva (privát), a projekt gyökerébe kell egy `.npmrc`:
-
-```
-@vikingokft:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
-```
-
-Lokálisan a `GITHUB_TOKEN` lehet egy személyes access token (scope: `read:packages`). CI-ben (GitHub Actions) automatikusan adott.
-
-Utána:
+A csomag **public npm**-en él, auth nélkül pull-olható:
 
 ```bash
 npm install @vikingokft/auth-client
 ```
+
+Nem kell `.npmrc`, nem kell token. (v0.5.0 és korábbi verziók GitHub Packages-en voltak — [részletek a CHANGELOG-ban](CHANGELOG.md#051---2026-04-24).)
 
 ## Használat Next.js-ben
 
