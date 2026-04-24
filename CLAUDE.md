@@ -165,6 +165,8 @@ A consumer repók `.github/dependabot.yml` config-ja csoportba szedi a `@vikingo
 
 6. **Backwards compat**: `clientSecret` opció megmaradt. Ha valaki külső appot köt be (nem belső), tudja használni a hagyományos secret-es flow-t.
 
+7. **Middleware file location (Next.js gotcha)**: ha a consumer app `src/app/` vagy `src/pages/` struktúrát használ, a middleware-t **`src/middleware.ts`**-be kell tenni. A repo gyökerében lévő `middleware.ts`-t a Next.js build **csendben kihagyja** — nincs error, a build zöld, csak a `.next/server/middleware-manifest.json` `"middleware": {}`-t tartalmaz, és a deploy SSO nélkül megy ki. Ha `src/` nincs a projektben, akkor a gyökérbe kell. Diagnosztika: nézd meg a build után a `middleware-manifest.json`-t.
+
 ---
 
 ## Konvenciók
