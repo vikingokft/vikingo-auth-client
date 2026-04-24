@@ -28,6 +28,13 @@ export interface AuthConfig {
 
   sessionCookieName?: string
   syncIntervalSeconds?: number
+
+  /**
+   * If true, requests are blocked when the periodic /sync call fails (e.g. auth server down).
+   * If false (default), requests are allowed through to avoid blocking work during outages.
+   * Trade-off: failClosed=true is more secure but introduces a hard dependency on the auth server's uptime.
+   */
+  failClosedOnSyncError?: boolean
 }
 
 function appIdFromVercelUrl(): string | undefined {
@@ -66,7 +73,11 @@ export function resolveConfig(cfg: AuthConfig) {
     sessionSecret: cfg.sessionSecret,
     sessionCookieName: cfg.sessionCookieName ?? 'vikingo_auth',
     syncIntervalSeconds: cfg.syncIntervalSeconds ?? 300,
+    failClosedOnSyncError: cfg.failClosedOnSyncError ?? false,
   }
 }
+
+export const STATE_COOKIE_NAME = 'vikingo_auth_state'
+export const STATE_COOKIE_MAX_AGE = 600 // 10 perc — addig kell visszajönni a Google login-ról
 
 export type ResolvedConfig = ReturnType<typeof resolveConfig>

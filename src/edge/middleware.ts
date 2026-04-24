@@ -1,8 +1,20 @@
 import { buildAuthorizeUrl, exchangeCodeForToken, syncUserStatus } from '../core/api'
-import { resolveConfig, type AuthConfig, type ResolvedConfig } from '../core/config'
+import {
+  resolveConfig,
+  STATE_COOKIE_MAX_AGE,
+  STATE_COOKIE_NAME,
+  type AuthConfig,
+  type ResolvedConfig,
+} from '../core/config'
 import { packSession, unpackSession } from '../core/session'
 import type { Session } from '../core/types'
 import { verifyAuthJwt } from '../core/verify'
+
+function randomNonce(): string {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('')
+}
 
 export interface VikingoEdgeAuthOptions extends AuthConfig {
   callbackPath?: string
@@ -83,14 +95,30 @@ export function vikingoEdgeAuth(options: VikingoEdgeAuthOptions) {
     const returnTo = url.searchParams.get('from') ?? '/'
     const callbackUrl = new URL(callbackPath, originOf(req))
     callbackUrl.searchParams.set('rt', returnTo)
-    return redirect(buildAuthorizeUrl(config, callbackUrl.toString()))
+
+    // CSRF védelem: lásd next/middleware.ts kommentje
+    const clientState = randomNonce()
+    callbackUrl.searchParams.set('cs', clientState)
+
+    const headers = new Headers()
+    setCookie(headers, STATE_COOKIE_NAME, clientState, { maxAge: STATE_COOKIE_MAX_AGE })
+    return redirect(buildAuthorizeUrl(config, callbackUrl.toString()), headers)
   }
 
   async function handleCallback(req: Request, url: URL): Promise<Response> {
     const config = getConfig()
     const code = url.searchParams.get('code')
     const returnTo = url.searchParams.get('rt') ?? '/'
-    if (!code) return redirect(new URL(loginPath, originOf(req)).toString())
+    const queryState = url.searchParams.get('cs')
+    const cookies = parseCookies(req.headers.get('cookie'))
+    const cookieState = cookies[STATE_COOKIE_NAME]
+
+    if (!code || !queryState || !cookieState || queryState !== cookieState) {
+      console.warn('[vikingo-auth] callback CSRF check failed or missing code')
+      const headers = new Headers()
+      clearCookieHeader(headers, STATE_COOKIE_NAME)
+      return redirect(new URL(loginPath, originOf(req)).toString(), headers)
+    }
 
     try {
       const token = await exchangeCodeForToken(config, code)
@@ -103,10 +131,13 @@ export function vikingoEdgeAuth(options: VikingoEdgeAuthOptions) {
       setCookie(headers, config.sessionCookieName, packed, {
         maxAge: Math.max(60, session.exp - Math.floor(Date.now() / 1000)),
       })
+      clearCookieHeader(headers, STATE_COOKIE_NAME)
       return redirect(dest.toString(), headers)
     } catch (err) {
       console.error('[vikingo-auth] callback error:', err)
-      return redirect(new URL(loginPath, originOf(req)).toString())
+      const headers = new Headers()
+      clearCookieHeader(headers, STATE_COOKIE_NAME)
+      return redirect(new URL(loginPath, originOf(req)).toString(), headers)
     }
   }
 
@@ -165,7 +196,14 @@ export function vikingoEdgeAuth(options: VikingoEdgeAuthOptions) {
           return redirect(loginUrl.toString(), headers)
         }
       } catch (err) {
-        console.error('[vikingo-auth] sync error (allowing request to proceed):', err)
+        console.error('[vikingo-auth] sync error:', err)
+        if (config.failClosedOnSyncError) {
+          const loginUrl = new URL(loginPath, originOf(req))
+          loginUrl.searchParams.set('reason', 'sync_unavailable')
+          const headers = new Headers()
+          clearCookieHeader(headers, config.sessionCookieName)
+          return redirect(loginUrl.toString(), headers)
+        }
       }
     }
 

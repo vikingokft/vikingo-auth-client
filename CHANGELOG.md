@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-24
+
+### Hozzáadva
+- **CSRF state validation a kliens middleware-ben** (next + edge): a `/auth/login` egy random nonce-ot tesz egy 10 perc TTL-es `vikingo_auth_state` httpOnly cookie-ba és a callback URL `cs` paraméterébe. A `/auth/callback` verifikálja, hogy a query `cs` egyezik a cookie-val. Megakadályozza a login-CSRF támadást.
+- **`failClosedOnSyncError` config opció** (default `false`): ha `true`, az auth-server `/sync` hibája esetén a request blokkolódik (login redirect) ahelyett, hogy átmenne. Magasabb biztonság, de keményebb dependency a szerver uptime-jára.
+- **30 vitest unit teszt** a config, session pack/unpack, és api endpoint hívásokra. CI futtat minden push-ra.
+
+### Belső
+- HKDF info string komment: jövőbeli verziózás magyarázat
+- Config object új mezővel egészült ki (visszafelé kompat)
+
 ## [0.4.1] - 2026-04-24
 
 ### Javítva

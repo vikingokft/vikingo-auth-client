@@ -1,9 +1,21 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { buildAuthorizeUrl, exchangeCodeForToken } from '../core/api'
-import { resolveConfig, type AuthConfig, type ResolvedConfig } from '../core/config'
+import {
+  resolveConfig,
+  STATE_COOKIE_MAX_AGE,
+  STATE_COOKIE_NAME,
+  type AuthConfig,
+  type ResolvedConfig,
+} from '../core/config'
 import { packSession, unpackSession } from '../core/session'
 import { syncUserStatus } from '../core/api'
 import { verifyAuthJwt } from '../core/verify'
+
+function randomNonce(): string {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('')
+}
 
 export interface VikingoAuthOptions extends AuthConfig {
   callbackPath?: string
@@ -53,15 +65,40 @@ export function vikingoAuth(options: VikingoAuthOptions) {
     const returnTo = req.nextUrl.searchParams.get('from') ?? '/'
     const callbackUrl = new URL(callbackPath, originOf(req))
     callbackUrl.searchParams.set('rt', returnTo)
-    return NextResponse.redirect(buildAuthorizeUrl(config, callbackUrl.toString()))
+
+    // CSRF védelem: a kliens által generált nonce a state cookie-ba kerül; az authorize
+    // szervernek nem küldjük, mert ő úgyis saját state-et generál és visszaadja a callback
+    // query-jében. Mi a callback-kor a saját kliens-state cookie-t verifikáljuk a query
+    // 'state' paraméterrel — ez akadályozza meg, hogy egy attacker ráirányítson minket
+    // egy tetszőleges code-ra (login-CSRF).
+    const clientState = randomNonce()
+    callbackUrl.searchParams.set('cs', clientState)
+
+    const res = NextResponse.redirect(buildAuthorizeUrl(config, callbackUrl.toString()))
+    res.cookies.set(STATE_COOKIE_NAME, clientState, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: STATE_COOKIE_MAX_AGE,
+    })
+    return res
   }
 
   async function handleCallback(req: NextRequest): Promise<NextResponse> {
     const config = getConfig()
     const code = req.nextUrl.searchParams.get('code')
     const returnTo = req.nextUrl.searchParams.get('rt') ?? '/'
-    if (!code) {
-      return NextResponse.redirect(new URL(loginPath, originOf(req)))
+    const queryState = req.nextUrl.searchParams.get('cs')
+    const cookieState = req.cookies.get(STATE_COOKIE_NAME)?.value
+
+    if (!code || !queryState || !cookieState || queryState !== cookieState) {
+      // CSRF check failure OR malformed callback → silent reject, redirect to login.
+      // We deliberately don't show a detailed error: would help an attacker probe.
+      console.warn('[vikingo-auth] callback CSRF check failed or missing code')
+      const res = NextResponse.redirect(new URL(loginPath, originOf(req)))
+      res.cookies.set(STATE_COOKIE_NAME, '', { maxAge: 0, path: '/' })
+      return res
     }
 
     try {
@@ -79,10 +116,14 @@ export function vikingoAuth(options: VikingoAuthOptions) {
         path: '/',
         maxAge: Math.max(60, session.exp - Math.floor(Date.now() / 1000)),
       })
+      // Clear the state cookie now that login is complete
+      res.cookies.set(STATE_COOKIE_NAME, '', { maxAge: 0, path: '/' })
       return res
     } catch (err) {
       console.error('[vikingo-auth] callback error:', err)
-      return NextResponse.redirect(new URL(loginPath, originOf(req)))
+      const res = NextResponse.redirect(new URL(loginPath, originOf(req)))
+      res.cookies.set(STATE_COOKIE_NAME, '', { maxAge: 0, path: '/' })
+      return res
     }
   }
 
@@ -160,7 +201,15 @@ export function vikingoAuth(options: VikingoAuthOptions) {
           maxAge: Math.max(60, refreshed.exp - Math.floor(Date.now() / 1000)),
         })
       } catch (err) {
-        console.error('[vikingo-auth] sync error (allowing request to proceed):', err)
+        console.error('[vikingo-auth] sync error:', err)
+        if (config.failClosedOnSyncError) {
+          const url = new URL(loginPath, originOf(req))
+          url.searchParams.set('reason', 'sync_unavailable')
+          const res = NextResponse.redirect(url)
+          clearCookie(res, config)
+          return res
+        }
+        // fail-open: allow request to proceed, log for ops visibility
       }
     }
 
