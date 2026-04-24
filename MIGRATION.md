@@ -2,15 +2,16 @@
 
 Ez a dokumentum pontosan leírja, hogyan köss be egy **belső vikingo eszközt** a `vikingoauth.hu` központi SSO-hoz. Két forgatókönyv: (1) **meglévő** app migrálása, (2) **új** projekt induláskor.
 
-> **v0.3.0 óta egyszerűsítve**: Vercel-en csak **1 per-project env var** kell (`VIKINGO_AUTH_CLIENT_SECRET`), a `NODE_AUTH_TOKEN` pedig Vercel Team Shared env vélről jön.
+> **v0.4.0 óta**: Vercel-en **0 per-project env var** kell. A `NODE_AUTH_TOKEN` pedig Vercel Team Shared env-ből jön (1x setup minden projektre érvényes).
 
-Minden migráció ugyanarra az 5 lépésre épül:
+Minden migráció ugyanarra az 4 lépésre épül:
 
-1. **Regisztráld az appot** a szerveren (kapsz egy `client_secret`-et)
-2. **Adj hozzá `.npmrc`**-t a GitHub Packages-hez
+1. **Regisztráld az appot** a szerveren (callback URLs)
+2. **Adj hozzá `.npmrc`**-t a GitHub Packages-hez (git-be commitolva)
 3. **Telepítsd a `@vikingokft/auth-client` csomagot**
 4. **Készíts `middleware.ts`-t** a megfelelő runtime-hoz (Next.js / Vercel edge / CLI)
-5. **Állítsd be az env változókat** (csak 1 per project, plusz a team-wide `NODE_AUTH_TOKEN`)
+
+Vercel-en **nem kell semmit beállítani per project** (a Team-level `NODE_AUTH_TOKEN`-en kívül, ami már létezik).
 
 ---
 
@@ -46,7 +47,7 @@ curl -X POST https://vikingoauth.hu/register \
   }'
 ```
 
-**A válaszból másold ki a `client_secret` értéket.** Ez kell az app env változójához — nem lehet újra lekérni, tedd el jelszókezelőbe. Ha elveszik: új `app_id`-vel új regisztráció kell.
+A válaszban kapott `client_secret`-re **a v0.4.0-ban nincs szükség** (public client model). A regisztráció maga viszont kötelező — ettől tudja a szerver, hogy az `app_id` létezik és melyik callback URLs-re küldhet code-ot.
 
 **app_id konvenció**: a repo nevével egyezzen. Lowercase, kötőjellel (`my-app-name`, nem `myAppName`). Max 64 karakter.
 
@@ -171,11 +172,10 @@ Első futtatáskor **böngésző nyílik** → Google login → token mentődik 
 # projekt gyökerében
 cat > .env.local <<EOF
 VIKINGO_AUTH_APP_ID=my-app-name
-VIKINGO_AUTH_CLIENT_SECRET=<a lépés 1-ből kapott secret>
 EOF
 ```
 
-**Helyben** a `VIKINGO_AUTH_APP_ID` kell, mert a `VERCEL_GIT_REPO_SLUG` env csak Vercel-en elérhető automatikusan. Éles/preview Vercel deploynál nem kell.
+Helyben az `app_id`-t expliciten kell megadni, mert a `VERCEL_GIT_REPO_SLUG` env csak Vercel-en elérhető automatikusan.
 
 ### Vercel — 1x setup a Team szinten
 
@@ -183,11 +183,9 @@ Ezt **csak egyszer** kell, minden projekt örökli. Vercel Dashboard → **Team 
 
 - `NODE_AUTH_TOKEN` — GitHub PAT `read:packages` scope-pal (lásd alább)
 
-### Vercel — per project env
+### Vercel — per project: nulla env
 
-Minden új projektnél csak **1 env var** kell, mind a 3 környezetre (Production + Preview + Development):
-
-- `VIKINGO_AUTH_CLIENT_SECRET` — a regisztrációnál kapott titok
+Új project bekötésekor **semmi** env változót nem kell beállítani. A middleware a runtime során automatikusan veszi a `VERCEL_GIT_REPO_SLUG`-ot mint `app_id`-t.
 
 ### GitHub PAT (`NODE_AUTH_TOKEN`, csak 1x)
 
@@ -201,9 +199,8 @@ Ha még nem hoztál létre egyet:
 
 ### Node CLI (nincs Vercel)
 
-A CLI felhasználóinak a gépén kell lennie:
-- `VIKINGO_AUTH_APP_ID` — a CLI neve
-- `VIKINGO_AUTH_CLIENT_SECRET` — shell env-ben, pl. `.zshrc`-ben exportálva
+A CLI felhasználóinak a gépén kell lennie csak az `app_id`:
+- `VIKINGO_AUTH_APP_ID` — a CLI neve, pl. `~/.zshrc`-ben exportálva
 
 ---
 
@@ -340,6 +337,20 @@ A `@vikingokft/auth-client` csomag automatikusan frissül minden repódban **Dep
 - **Major (0.x → 1.0)**: breaking change → **manuális review**, változáslog szerint
 
 Minden repóban legyen `.github/dependabot.yml` (a template-ben már benne van).
+
+## Biztonsági modell (public client, v0.4.0+)
+
+Az auth-server **nem követel meg `client_secret`-et** a `/token` és `/sync` endpoint-okon. A védelmi rétegek:
+
+1. **Workspace SSO** — Google csak vikingo Workspace user-eket enged be (`hd` claim + domain whitelist)
+2. **Regisztrált callback URLs** — a code csak a regisztrált URL-re irányítódik vissza, attacker nem tudja máshova kérni
+3. **Single-use code, 120s TTL** — 64-hex (256-bit entrópia) random, brute-force-olhatatlan
+4. **Rate limit** — 20 req / IP / perc minden érzékeny endpointon
+5. **Workspace status sync** — minden 5. percben lekérdezi a user státuszát; suspend/delete = azonnali kitiltás
+
+Egyetlen elvi támadási vektor: ha attacker hozzáfér a regisztrált callback URL-re érkező requesthez (browser history, server log, MITM), 120s ablakon belül beválthatja a code-ot. Ez a kockázat ugyanúgy fennáll a hagyományos `client_secret`-es model-ben is, ha a secret leak-el.
+
+A `client_secret` opció továbbra is **támogatott** — ha külső appot kötsz be, ahol nem bízol meg a domain-ben, állítsd be `VIKINGO_AUTH_CLIENT_SECRET` env-ben és a kliens elküldi a szervernek.
 
 ---
 
