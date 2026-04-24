@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-24
+
+### Hozzáadva
+- **`appId` auto-detect**: ha nem adod meg explicit módon, a csomag a `VIKINGO_AUTH_APP_ID` env-ből, majd a Vercel által automatikusan injektált `VERCEL_GIT_REPO_SLUG`-ből veszi. Vercel appoknál **nem kell beállítani** az `VIKINGO_AUTH_APP_ID` env változót.
+- **Session-signing key derivation**: ha nincs `sessionSecret` megadva, a session cookie aláírása HKDF-SHA256-tal deriválódik a `clientSecret`-ből. Gyakorlatilag **nem kell beállítani** a `VIKINGO_AUTH_SESSION_SECRET` env változót.
+- **`clientSecret` is opcionális** a konfig objektumban: ha `VIKINGO_AUTH_CLIENT_SECRET` env változó be van állítva, a csomag onnan olvassa.
+
+### Változott
+- **Per-app Vercel env**: korábban 4 env var kellett (`VIKINGO_AUTH_APP_ID`, `VIKINGO_AUTH_CLIENT_SECRET`, `VIKINGO_AUTH_SESSION_SECRET`, `NODE_AUTH_TOKEN`). Most csak **1 kötelező**: `VIKINGO_AUTH_CLIENT_SECRET`. A `NODE_AUTH_TOKEN`-t Vercel Team-level shared env-ként állítsd be egyszer.
+
+### Visszafelé kompatibilis
+A régi env változók (`VIKINGO_AUTH_APP_ID`, `VIKINGO_AUTH_SESSION_SECRET`) **továbbra is működnek**, ha explicit be vannak állítva. Csak mostantól opcionálisak.
+
 ## [0.2.0] - 2026-04-24
 
 ### Hozzáadva

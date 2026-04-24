@@ -58,10 +58,6 @@ export function vikingoEdgeAuth(options: VikingoEdgeAuthOptions) {
   const logoutPath = options.logoutPath ?? DEFAULTS.logoutPath
   const publicPaths = options.publicPaths ?? []
 
-  if (!config.sessionSecret) {
-    throw new Error('@vikingokft/auth-client: sessionSecret is required')
-  }
-
   function isPublic(pathname: string): boolean {
     if (pathname === callbackPath || pathname === loginPath || pathname === logoutPath) return true
     for (const rule of publicPaths) {

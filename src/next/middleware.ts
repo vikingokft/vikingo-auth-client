@@ -25,12 +25,6 @@ export function vikingoAuth(options: VikingoAuthOptions) {
   const logoutPath = options.logoutPath ?? DEFAULTS.logoutPath
   const publicPaths = options.publicPaths ?? []
 
-  if (!config.sessionSecret) {
-    throw new Error(
-      '@vikingokft/auth-client: sessionSecret is required. Generate with `openssl rand -hex 32` and set VIKINGO_AUTH_SESSION_SECRET.',
-    )
-  }
-
   function isPublic(pathname: string): boolean {
     if (pathname === callbackPath || pathname === loginPath || pathname === logoutPath) return true
     for (const rule of publicPaths) {
