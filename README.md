@@ -39,7 +39,9 @@ VIKINGO_AUTH_CLIENT_SECRET=<the-secret-from-register>
 VIKINGO_AUTH_SESSION_SECRET=<openssl rand -hex 32>
 ```
 
-### 3. `middleware.ts` gyökérszinten
+### 3. `middleware.ts` — a repo gyökerében, VAGY `src/middleware.ts` ha `src/`-struktúrát használsz
+
+> **Fontos**: ha Next.js `src/app/` vagy `src/pages/` struktúrát használsz, a `middleware.ts` **kötelezően** a `src/`-ben legyen. A gyökérbe tett `middleware.ts`-t a Next.js build csendben kihagyja (üres `middleware-manifest.json`) és az SSO nem fog aktiválódni, hiba nélkül.
 
 ```ts
 import { vikingoAuth } from '@vikingokft/auth-client/next'

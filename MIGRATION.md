@@ -93,10 +93,10 @@ NODE_AUTH_TOKEN=$(gh auth token) npm install
 
 ### 4.a Next.js 14+ (App Router)
 
-Helyezd a projekt gyökerébe (NEM a `src/` alá, akkor sem ha van `src/app/`).
+**Hova tedd**: ha a projekt használ `src/` mappát (`src/app/` vagy `src/pages/`), akkor **`src/middleware.ts`**. Ha nincs `src/`, akkor a repo gyökerében `middleware.ts`. Rossz helyen a build csendben kihagyja.
 
 ```ts
-// middleware.ts
+// src/middleware.ts (vagy ./middleware.ts ha nincs src/)
 import { vikingoAuth } from '@vikingokft/auth-client/next'
 
 export default vikingoAuth({
@@ -214,9 +214,11 @@ Deploy után teszteld:
 4. Cookie-k között: `vikingo_auth=eyJ...` (HttpOnly)
 
 Ha valami baj van:
-- **`500 Internal Server Error`** a buildnél → valószínűleg `NODE_AUTH_TOKEN` hiányzik Vercel-en, vagy rossz scope-ú
 - **`unknown_client` hiba** a loginnál → az `app_id` nem egyezik a regisztrálttal, vagy a callback URL nem szerepel a `callback_urls` listában
-- **404 callback-en** → a middleware nem fut (rossz `matcher` vagy `middleware.ts` nem a gyökérben van)
+- **Nincs SSO redirect / az app simán betöltődik auth nélkül** → a middleware nem fut. Ellenőrzés: build után nyisd meg `.next/server/middleware-manifest.json`-t; ha `"middleware": {}`, a Next.js kihagyta. Oka általában a middleware rossz helyen van:
+  - `src/`-struktúránál (`src/app/` vagy `src/pages/` létezik) → **`src/middleware.ts`** kell, nem a repo gyökerében lévő `middleware.ts`
+  - `src/` nélkül → a repo gyökerében legyen
+- **Redirect loop** → a `publicPaths` nem tartalmazza a `/auth/callback`-et (nem kell, a middleware automatikusan kezeli; ellenőrizd, hogy nem írod felül)
 - **Redirect loop** → a `publicPaths` nem tartalmazza a `/auth/callback`-et (nem kell, a middleware automatikusan kezeli; ellenőrizd, hogy nem írod felül)
 
 ---
@@ -241,25 +243,21 @@ cd /Users/nagybence/Documents/Github/<my-existing-app>
 # 1. Regisztráció (egyszer, lásd lépés 1. fent)
 curl -X POST https://vikingoauth.hu/register ...
 
-# 2. .npmrc
-cat > .npmrc <<'EOF'
-@vikingokft:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
-EOF
+# 2. Install (public npm, nincs .npmrc és nincs auth token)
+npm install @vikingokft/auth-client
 
-# 3. Install
-NODE_AUTH_TOKEN=$(gh auth token) npm install @vikingokft/auth-client
+# 3. middleware.ts a helyes helyre, a 4.a/4.b/4.c közül megfelelő minta
+#    - ha van src/app/ vagy src/pages/ → src/middleware.ts
+#    - ha nincs src/ → ./middleware.ts a repo gyökerében
 
-# 4. middleware.ts a gyökérbe, a 4.a/4.b/4.c közül megfelelő minta
+# 4. .env.local + (Vercel env változók csak ha régi auth-ot vegyítesz)
 
-# 5. .env.local + Vercel env változók
-
-# 6. Commit + push
-git add .npmrc middleware.ts package.json package-lock.json
+# 5. Commit + push
+git add middleware.ts src/middleware.ts package.json package-lock.json 2>/dev/null
 git commit -m "add Google Workspace SSO via @vikingokft/auth-client"
 git push
 
-# 7. Vercel auto-deploy, teszt
+# 6. Vercel auto-deploy, teszt
 ```
 
 ### Régi auth eltávolítása (később)
