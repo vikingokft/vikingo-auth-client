@@ -1,6 +1,6 @@
 {
   "name": "@vikingokft/auth-client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Client library for vikingo-auth-server. Drop-in Google Workspace SSO for Next.js apps and Node CLIs.",
   "type": "module",
   "sideEffects": false,
@@ -27,6 +27,10 @@
     "./cli": {
       "types": "./dist/cli/index.d.ts",
       "import": "./dist/cli/index.js"
+    },
+    "./edge": {
+      "types": "./dist/edge/index.d.ts",
+      "import": "./dist/edge/index.js"
     }
   },
   "scripts": {

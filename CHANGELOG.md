@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-24
+
+### Hozzáadva
+- `@vikingokft/auth-client/edge` — framework-független edge middleware standard Web API `Request`/`Response` használatával. Next.js nélküli Vercel projektek és bármely edge runtime támogatása.
+- `getSessionFromRequest()` helper az edge exportban — session kiolvasás bármely `Request`-ből.
+
 ## [0.1.0] - 2026-04-24
 
 ### Hozzáadva
