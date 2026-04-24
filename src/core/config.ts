@@ -29,15 +29,22 @@ export interface AuthConfig {
   syncIntervalSeconds?: number
 }
 
+function appIdFromVercelUrl(): string | undefined {
+  if (typeof process === 'undefined' || !process.env) return undefined
+  const url = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL
+  if (!url) return undefined
+  const host = url.split('/')[0] ?? ''
+  const label = host.split('.')[0]
+  return label || undefined
+}
+
 function resolveAppId(cfg: AuthConfig): string {
-  const envAppId =
-    typeof process !== 'undefined' && process.env
-      ? process.env.VIKINGO_AUTH_APP_ID ?? process.env.VERCEL_GIT_REPO_SLUG
-      : undefined
+  const env = typeof process !== 'undefined' && process.env ? process.env : undefined
+  const envAppId = env?.VIKINGO_AUTH_APP_ID ?? env?.VERCEL_GIT_REPO_SLUG ?? appIdFromVercelUrl()
   const appId = cfg.appId ?? envAppId
   if (!appId) {
     throw new Error(
-      '@vikingokft/auth-client: appId not set. Either pass `appId` explicitly, or set VIKINGO_AUTH_APP_ID env var (Vercel: VERCEL_GIT_REPO_SLUG is auto-detected).',
+      '@vikingokft/auth-client: appId not set. Pass `appId` explicitly, or set VIKINGO_AUTH_APP_ID env var. (Vercel system vars VERCEL_GIT_REPO_SLUG / VERCEL_PROJECT_PRODUCTION_URL are auto-detected when available.)',
     )
   }
   return appId

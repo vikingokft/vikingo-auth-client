@@ -1,5 +1,5 @@
 import { buildAuthorizeUrl, exchangeCodeForToken, syncUserStatus } from '../core/api'
-import { resolveConfig, type AuthConfig } from '../core/config'
+import { resolveConfig, type AuthConfig, type ResolvedConfig } from '../core/config'
 import { packSession, unpackSession } from '../core/session'
 import type { Session } from '../core/types'
 import { verifyAuthJwt } from '../core/verify'
@@ -30,7 +30,7 @@ function setCookie(
   headers.append('set-cookie', parts.join('; '))
 }
 
-function clearCookie(headers: Headers, name: string) {
+function clearCookieHeader(headers: Headers, name: string) {
   setCookie(headers, name, '', { maxAge: 0 })
 }
 
@@ -52,7 +52,12 @@ function redirect(to: string, extraHeaders?: Headers): Response {
 }
 
 export function vikingoEdgeAuth(options: VikingoEdgeAuthOptions) {
-  const config = resolveConfig(options)
+  let cached: ResolvedConfig | null = null
+  function getConfig(): ResolvedConfig {
+    if (!cached) cached = resolveConfig(options)
+    return cached
+  }
+
   const callbackPath = options.callbackPath ?? DEFAULTS.callbackPath
   const loginPath = options.loginPath ?? DEFAULTS.loginPath
   const logoutPath = options.logoutPath ?? DEFAULTS.logoutPath
@@ -74,6 +79,7 @@ export function vikingoEdgeAuth(options: VikingoEdgeAuthOptions) {
   }
 
   async function handleLogin(req: Request, url: URL): Promise<Response> {
+    const config = getConfig()
     const returnTo = url.searchParams.get('from') ?? '/'
     const callbackUrl = new URL(callbackPath, originOf(req))
     callbackUrl.searchParams.set('rt', returnTo)
@@ -81,6 +87,7 @@ export function vikingoEdgeAuth(options: VikingoEdgeAuthOptions) {
   }
 
   async function handleCallback(req: Request, url: URL): Promise<Response> {
+    const config = getConfig()
     const code = url.searchParams.get('code')
     const returnTo = url.searchParams.get('rt') ?? '/'
     if (!code) return redirect(new URL(loginPath, originOf(req)).toString())
@@ -104,8 +111,9 @@ export function vikingoEdgeAuth(options: VikingoEdgeAuthOptions) {
   }
 
   async function handleLogout(req: Request): Promise<Response> {
+    const config = getConfig()
     const headers = new Headers()
-    clearCookie(headers, config.sessionCookieName)
+    clearCookieHeader(headers, config.sessionCookieName)
     return redirect(new URL('/', originOf(req)).toString(), headers)
   }
 
@@ -118,6 +126,14 @@ export function vikingoEdgeAuth(options: VikingoEdgeAuthOptions) {
     if (pathname === logoutPath) return handleLogout(req)
 
     if (isPublic(pathname)) return undefined
+
+    let config: ResolvedConfig
+    try {
+      config = getConfig()
+    } catch (err) {
+      console.error('[vikingo-auth] config error:', err)
+      return undefined
+    }
 
     const cookies = parseCookies(req.headers.get('cookie'))
     const cookie = cookies[config.sessionCookieName]
@@ -132,7 +148,7 @@ export function vikingoEdgeAuth(options: VikingoEdgeAuthOptions) {
       const loginUrl = new URL(loginPath, originOf(req))
       loginUrl.searchParams.set('from', pathname + url.search)
       const headers = new Headers()
-      clearCookie(headers, config.sessionCookieName)
+      clearCookieHeader(headers, config.sessionCookieName)
       return redirect(loginUrl.toString(), headers)
     }
 
@@ -145,7 +161,7 @@ export function vikingoEdgeAuth(options: VikingoEdgeAuthOptions) {
           const loginUrl = new URL(loginPath, originOf(req))
           loginUrl.searchParams.set('reason', status)
           const headers = new Headers()
-          clearCookie(headers, config.sessionCookieName)
+          clearCookieHeader(headers, config.sessionCookieName)
           return redirect(loginUrl.toString(), headers)
         }
       } catch (err) {

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-04-24
+
+### Javítva
+- **Lazy config resolution**: a middleware most a kérés pillanatában resolválja a configot, nem modul betöltéskor. Ez megoldja a `MIDDLEWARE_INVOCATION_FAILED` hibát edge runtime-okban, ahol bizonyos rendszer env változók (`VERCEL_GIT_REPO_SLUG`) csak futásidőben elérhetőek.
+- **`appIdFromVercelUrl()` fallback**: ha sem `VIKINGO_AUTH_APP_ID`, sem `VERCEL_GIT_REPO_SLUG` nincs elérhető, a csomag megpróbálja kinyerni az app_id-t a `VERCEL_PROJECT_PRODUCTION_URL` vagy `VERCEL_URL` subdomain részéből.
+
 ## [0.3.0] - 2026-04-24
 
 ### Hozzáadva

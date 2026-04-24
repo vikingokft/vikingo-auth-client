@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { buildAuthorizeUrl, exchangeCodeForToken } from '../core/api'
-import { resolveConfig, type AuthConfig } from '../core/config'
+import { resolveConfig, type AuthConfig, type ResolvedConfig } from '../core/config'
 import { packSession, unpackSession } from '../core/session'
 import { syncUserStatus } from '../core/api'
 import { verifyAuthJwt } from '../core/verify'
@@ -19,7 +19,12 @@ const DEFAULTS = {
 }
 
 export function vikingoAuth(options: VikingoAuthOptions) {
-  const config = resolveConfig(options)
+  let cached: ResolvedConfig | null = null
+  function getConfig(): ResolvedConfig {
+    if (!cached) cached = resolveConfig(options)
+    return cached
+  }
+
   const callbackPath = options.callbackPath ?? DEFAULTS.callbackPath
   const loginPath = options.loginPath ?? DEFAULTS.loginPath
   const logoutPath = options.logoutPath ?? DEFAULTS.logoutPath
@@ -39,11 +44,12 @@ export function vikingoAuth(options: VikingoAuthOptions) {
     return `${proto}://${host}`
   }
 
-  function clearCookie(res: NextResponse) {
+  function clearCookie(res: NextResponse, config: ResolvedConfig) {
     res.cookies.set(config.sessionCookieName, '', { maxAge: 0, path: '/' })
   }
 
   async function handleLogin(req: NextRequest): Promise<NextResponse> {
+    const config = getConfig()
     const returnTo = req.nextUrl.searchParams.get('from') ?? '/'
     const callbackUrl = new URL(callbackPath, originOf(req))
     callbackUrl.searchParams.set('rt', returnTo)
@@ -51,6 +57,7 @@ export function vikingoAuth(options: VikingoAuthOptions) {
   }
 
   async function handleCallback(req: NextRequest): Promise<NextResponse> {
+    const config = getConfig()
     const code = req.nextUrl.searchParams.get('code')
     const returnTo = req.nextUrl.searchParams.get('rt') ?? '/'
     if (!code) {
@@ -80,8 +87,9 @@ export function vikingoAuth(options: VikingoAuthOptions) {
   }
 
   async function handleLogout(req: NextRequest): Promise<NextResponse> {
+    const config = getConfig()
     const res = NextResponse.redirect(new URL('/', originOf(req)))
-    clearCookie(res)
+    clearCookie(res, config)
     return res
   }
 
@@ -93,6 +101,14 @@ export function vikingoAuth(options: VikingoAuthOptions) {
     if (pathname === logoutPath) return handleLogout(req)
 
     if (isPublic(pathname)) return NextResponse.next()
+
+    let config: ResolvedConfig
+    try {
+      config = getConfig()
+    } catch (err) {
+      console.error('[vikingo-auth] config error:', err)
+      return NextResponse.next()
+    }
 
     const cookie = req.cookies.get(config.sessionCookieName)?.value
     if (!cookie) {
@@ -106,7 +122,7 @@ export function vikingoAuth(options: VikingoAuthOptions) {
       const url = new URL(loginPath, originOf(req))
       url.searchParams.set('from', pathname + req.nextUrl.search)
       const res = NextResponse.redirect(url)
-      clearCookie(res)
+      clearCookie(res, config)
       return res
     }
 
@@ -114,7 +130,7 @@ export function vikingoAuth(options: VikingoAuthOptions) {
       const url = new URL(loginPath, originOf(req))
       url.searchParams.set('from', pathname + req.nextUrl.search)
       const res = NextResponse.redirect(url)
-      clearCookie(res)
+      clearCookie(res, config)
       return res
     }
 
@@ -131,7 +147,7 @@ export function vikingoAuth(options: VikingoAuthOptions) {
           const url = new URL(loginPath, originOf(req))
           url.searchParams.set('reason', status)
           const res = NextResponse.redirect(url)
-          clearCookie(res)
+          clearCookie(res, config)
           return res
         }
         const refreshed = { ...session, lastSyncedAt: Date.now() }
