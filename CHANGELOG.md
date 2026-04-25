@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-04-25
+
+### Hozzáadva
+- **Auto-register az első request-en** (next + edge middleware). Ha a `VIKINGO_AUTH_REGISTRATION_TOKEN` env be van állítva, a middleware az induláskor ellenőrzi (`GET /register/:appId`), hogy az app regisztrálva van-e a worker registry-jében. Ha nincs (404), POST-tal felveszi `app_id`, `callback_urls` és `allow_guest_invites: true` beállítással.
+  - **Callback URL preferálva**: `process.env.VERCEL_PROJECT_PRODUCTION_URL` (kanonikus production domain); fallback a request origin-jére.
+  - **Csak production environmentben** próbálkozik (`VERCEL_ENV === 'production'` vagy `VERCEL_ENV` nincs beállítva). Preview/development deploy-ok nem írnak be a registry-be.
+  - **Lazy + cached**: modul-szintű `Promise<void>` cache, így worker-élettartamonként egyszer fut. Hiba esetén a következő request újrapróbálja (transient network gondoknál öngyógyul).
+  - **Fire-and-forget**: a request-feldolgozást nem blokkolja, hiba esetén csak `console.error`.
+- **`autoRegisterApp(config, callbackUrl, registrationToken)`** — új public függvény a `core/api`-ból. Idempotens, manuális hívásra is jó (pl. CI deploy script-ben).
+
+### Migráció
+
+Nincs törő változás. Ha azt szeretnéd, hogy az app deploy után automatikusan regisztrálódjon a worker registry-jébe:
+
+1. Adj egy `VIKINGO_AUTH_REGISTRATION_TOKEN` env var-t a Vercel projekt vagy team szintjén (értéke a worker `REGISTRATION_TOKEN` secretje).
+2. Új deploy után az első kérés automatikusan regisztrálja az app-ot.
+3. A token utána el is távolítható az env-ből, ha akarod (a /register csak akkor fut, ha még nincs regisztrált entry).
+
+Ha nem állítod be a env var-t, a viselkedés változatlan (kézi `/register` curl, vagy admin UI form).
+
 ## [0.7.0] - 2026-04-25
 
 ### Hozzáadva

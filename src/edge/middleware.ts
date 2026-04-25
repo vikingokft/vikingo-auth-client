@@ -1,4 +1,4 @@
-import { buildAuthorizeUrl, exchangeCodeForToken, syncUserStatus } from '../core/api'
+import { autoRegisterApp, buildAuthorizeUrl, exchangeCodeForToken, syncUserStatus } from '../core/api'
 import {
   resolveConfig,
   STATE_COOKIE_MAX_AGE,
@@ -9,6 +9,37 @@ import {
 import { packSession, unpackSession } from '../core/session'
 import type { Session } from '../core/types'
 import { verifyAuthJwt } from '../core/verify'
+
+// Auto-register state — lásd next/middleware.ts a részletes magyarázatért.
+let autoRegisterPromise: Promise<void> | null = null
+
+function deriveProductionCallbackUrlEdge(req: Request, callbackPath: string): string {
+  const env = typeof process !== 'undefined' && process.env ? process.env : undefined
+  const prod = env?.VERCEL_PROJECT_PRODUCTION_URL
+  if (prod) return `https://${prod}${callbackPath}`
+  const url = new URL(req.url)
+  const proto = req.headers.get('x-forwarded-proto') ?? url.protocol.replace(':', '')
+  const host = req.headers.get('host') ?? url.host
+  return `${proto}://${host}${callbackPath}`
+}
+
+function tryAutoRegisterEdge(config: ResolvedConfig, callbackUrl: string): void {
+  if (autoRegisterPromise) return
+  const env = typeof process !== 'undefined' && process.env ? process.env : undefined
+  const token = env?.VIKINGO_AUTH_REGISTRATION_TOKEN
+  if (!token) return
+  if (env?.VERCEL_ENV && env.VERCEL_ENV !== 'production') return
+  autoRegisterPromise = autoRegisterApp(config, callbackUrl, token)
+    .then((res) => {
+      if (!res.alreadyRegistered) {
+        console.log(`[vikingo-auth] auto-registered app ${config.appId} (${callbackUrl})`)
+      }
+    })
+    .catch((err) => {
+      console.error('[vikingo-auth] auto-register failed (will retry):', err)
+      autoRegisterPromise = null
+    })
+}
 
 function randomNonce(): string {
   const bytes = new Uint8Array(16)
@@ -190,6 +221,13 @@ export function vikingoEdgeAuth(options: VikingoEdgeAuthOptions) {
   }
 
   return async function middleware(req: Request): Promise<Response | undefined> {
+    // Lazy auto-register — modul-szintű promise cache, fire-and-forget.
+    try {
+      tryAutoRegisterEdge(getConfig(), deriveProductionCallbackUrlEdge(req, callbackPath))
+    } catch {
+      // config error path lentebb kezeli
+    }
+
     const url = new URL(req.url)
     const { pathname } = url
 
