@@ -60,6 +60,22 @@ export const config = {
 
 Ennyi. Minden route védett, kivéve a `publicPaths` listát.
 
+### Auto-register (v0.8.0+)
+
+Ha az új deploy-od első kérése után automatikusan szeretnéd hogy az app megjelenjen a worker registry-jében (admin UI Alkalmazások fülén), állítsd be a Vercel projektedhez (vagy team szinten) a `VIKINGO_AUTH_REGISTRATION_TOKEN` env vart.
+
+```bash
+# Vercel CLI
+vercel env add VIKINGO_AUTH_REGISTRATION_TOKEN production
+# Értéke: a worker REGISTRATION_TOKEN secretje
+```
+
+A middleware az első request-en `GET /register/:appId`-vel ellenőrzi, és ha 404-et kap, POST-tal felveszi az app-ot az `app_id`-vel, `VERCEL_PROJECT_PRODUCTION_URL`-ből származtatott callback URL-lel és `allow_guest_invites: true` flag-gel. **Csak production environmentben fut** (`VERCEL_ENV === 'production'`), preview deploy-ok nem regisztrálódnak.
+
+Az auto-register **fire-and-forget**: a request-feldolgozást nem blokkolja, hibákat csak `console.error`-ral logolja. Idempotens — már regisztrált app-ot nem ír felül.
+
+Ha nem akarsz auto-register-t, hagyd ki a env var-t — a viselkedés változatlan (kézi `curl /register` vagy admin UI form).
+
 ### Vendég invite támogatás (v0.6.0+)
 
 A middleware automatikusan kezeli a `/auth/invite-callback` path-ot, amit az auth-server `/invite/redeem` flow használ vendégekre. Ehhez nem kell semmit külön konfigurálnod.
