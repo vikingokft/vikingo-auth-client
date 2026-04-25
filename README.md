@@ -60,6 +60,34 @@ export const config = {
 
 Ennyi. Minden route védett, kivéve a `publicPaths` listát.
 
+### Vendég invite támogatás (v0.6.0+)
+
+A middleware automatikusan kezeli a `/auth/invite-callback` path-ot, amit az auth-server `/invite/redeem` flow használ vendégekre. Ehhez nem kell semmit külön konfigurálnod.
+
+A vendég session JWT `guest: true` claim-mel jön. A kódban:
+
+```ts
+import { getUser } from '@vikingokft/auth-client/next'
+
+const user = await getUser(config)
+
+if (user?.guest) {
+  // Read-only mód, korlátozott feature-ök, "vendég vagy" hint, stb.
+}
+```
+
+Custom path szabályozás (pl. ha nem `/auth/`-ba teszed a callback-eket):
+
+```ts
+vikingoAuth({
+  callbackPath: '/login/callback',
+  inviteCallbackPath: '/login/invite-callback',
+  ...
+})
+```
+
+A vendég session-öket az auth-server admin UI-ról vissza lehet vonni — a middleware periodikus `/sync` hívása észleli és kirúgja a sessiont (max ~5 perc latency).
+
 ### 4. User adatok elérése Server Components-ben
 
 ```ts
