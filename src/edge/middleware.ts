@@ -20,6 +20,8 @@ export interface VikingoEdgeAuthOptions extends AuthConfig {
   callbackPath?: string
   loginPath?: string
   logoutPath?: string
+  /** Path used by the guest invite redemption flow. See next/middleware for full docs. */
+  inviteCallbackPath?: string
   publicPaths?: (string | RegExp)[]
 }
 
@@ -27,6 +29,7 @@ const DEFAULTS = {
   callbackPath: '/auth/callback',
   loginPath: '/auth/login',
   logoutPath: '/auth/logout',
+  inviteCallbackPath: '/auth/invite-callback',
 }
 
 function setCookie(
@@ -73,10 +76,17 @@ export function vikingoEdgeAuth(options: VikingoEdgeAuthOptions) {
   const callbackPath = options.callbackPath ?? DEFAULTS.callbackPath
   const loginPath = options.loginPath ?? DEFAULTS.loginPath
   const logoutPath = options.logoutPath ?? DEFAULTS.logoutPath
+  const inviteCallbackPath = options.inviteCallbackPath ?? DEFAULTS.inviteCallbackPath
   const publicPaths = options.publicPaths ?? []
 
   function isPublic(pathname: string): boolean {
-    if (pathname === callbackPath || pathname === loginPath || pathname === logoutPath) return true
+    if (
+      pathname === callbackPath ||
+      pathname === loginPath ||
+      pathname === logoutPath ||
+      pathname === inviteCallbackPath
+    )
+      return true
     for (const rule of publicPaths) {
       if (typeof rule === 'string' ? pathname.startsWith(rule) : rule.test(pathname)) return true
     }
@@ -148,12 +158,44 @@ export function vikingoEdgeAuth(options: VikingoEdgeAuthOptions) {
     return redirect(new URL('/', originOf(req)).toString(), headers)
   }
 
+  // Guest invite beváltás flow. Részletes magyarázat a next/middleware.ts-ben.
+  async function handleInviteCallback(req: Request, url: URL): Promise<Response> {
+    const config = getConfig()
+    const code = url.searchParams.get('code')
+    if (!code) {
+      console.warn('[vikingo-auth] invite-callback missing code')
+      return redirect(new URL(loginPath, originOf(req)).toString())
+    }
+    try {
+      const token = await exchangeCodeForToken(config, code)
+      const verified = await verifyAuthJwt(token.access_token, config)
+      if (!verified.guest) {
+        console.warn('[vikingo-auth] invite-callback rejected: not a guest token')
+        return redirect(new URL(loginPath, originOf(req)).toString())
+      }
+      const session: Session = { ...verified, lastSyncedAt: Date.now() }
+      const packed = await packSession(session, config)
+
+      const dest = new URL('/', originOf(req))
+      const headers = new Headers()
+      setCookie(headers, config.sessionCookieName, packed, {
+        maxAge: Math.max(60, session.exp - Math.floor(Date.now() / 1000)),
+      })
+      clearCookieHeader(headers, STATE_COOKIE_NAME)
+      return redirect(dest.toString(), headers)
+    } catch (err) {
+      console.error('[vikingo-auth] invite-callback error:', err)
+      return redirect(new URL(loginPath, originOf(req)).toString())
+    }
+  }
+
   return async function middleware(req: Request): Promise<Response | undefined> {
     const url = new URL(req.url)
     const { pathname } = url
 
     if (pathname === loginPath) return handleLogin(req, url)
     if (pathname === callbackPath) return handleCallback(req, url)
+    if (pathname === inviteCallbackPath) return handleInviteCallback(req, url)
     if (pathname === logoutPath) return handleLogout(req)
 
     if (isPublic(pathname)) return undefined
@@ -183,8 +225,9 @@ export function vikingoEdgeAuth(options: VikingoEdgeAuthOptions) {
       return redirect(loginUrl.toString(), headers)
     }
 
+    // Guest session-öket nem szinkronizáljuk: a Workspace Admin SDK nem ismeri őket.
     const syncIntervalMs = config.syncIntervalSeconds * 1000
-    const needsSync = !session.lastSyncedAt || Date.now() - session.lastSyncedAt > syncIntervalMs
+    const needsSync = !session.guest && (!session.lastSyncedAt || Date.now() - session.lastSyncedAt > syncIntervalMs)
     if (needsSync) {
       try {
         const status = await syncUserStatus(config, session.sub)

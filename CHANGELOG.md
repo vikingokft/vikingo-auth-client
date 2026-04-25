@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-04-25
+
+### Hozzáadva
+- **Guest invite flow támogatás** (next + edge middleware). Az auth-server `/invite/redeem` endpoint-ja most átirányít a kliens `/auth/invite-callback` path-jára, amit ez a verzió kezel:
+  - Új middleware path: `inviteCallbackPath` config opció (default `/auth/invite-callback`).
+  - A handler **NEM** kéri a `vikingo_auth_state` CSRF cookie-t (a vendég soha nem volt korábban az app-on), helyette a JWT `guest: true` claim-jét validálja.
+  - **Biztonsági gate**: ha a kicserélt JWT nem `guest: true` (pl. valaki normál Workspace auth code-ot küld erre az endpoint-ra), silent reject + `/auth/login` redirect. Így ez az endpoint nem használható CSRF bypass-ra normál user flow-ra.
+- **`Session.guest` és `Session.invitedBy` mezők**: a kliens code-ban most már `session.guest === true` ellenőrzéssel megkülönböztethető a vendég és a Workspace user.
+- **Guest session-ök NEM mennek át a `/sync` periodikus check-en**. A Workspace Admin SDK nem ismeri a `guest:<email>` formátumú sub-okat, ezért az ő lifecycle-jüket kizárólag a JWT `exp` szabályozza.
+
+### Migráció
+
+Nincs törő változás. Frissítés: `npm update @vikingokft/auth-client`. A meglévő middleware használat változatlanul működik. Ha vendég invite-okat akarsz fogadni, semmit nem kell konfigurálnod — a default `/auth/invite-callback` path automatikusan él.
+
 ## [0.5.3] - 2026-04-24
 
 ### Változott

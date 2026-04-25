@@ -27,7 +27,10 @@ export async function verifyAuthJwt(token: string, config: ResolvedConfig): Prom
     throw new Error('invalid_token_claims')
   }
 
-  return {
+  const guest = payload.guest === true
+  const invitedBy = typeof payload.invited_by === 'string' ? payload.invited_by : undefined
+
+  const session: Session = {
     sub,
     email,
     name,
@@ -36,4 +39,9 @@ export async function verifyAuthJwt(token: string, config: ResolvedConfig): Prom
     iat: payload.iat ?? 0,
     exp: payload.exp ?? 0,
   }
+  if (guest) {
+    session.guest = true
+    if (invitedBy) session.invitedBy = invitedBy
+  }
+  return session
 }
