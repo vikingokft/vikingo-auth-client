@@ -239,15 +239,15 @@ export function vikingoAuth(options: VikingoAuthOptions) {
     nextRes.headers.set('x-vikingo-user-email', session.email)
     nextRes.headers.set('x-vikingo-user-sub', session.sub)
 
-    // Guest session-öket nem szinkronizáljuk: a Workspace Admin SDK nem ismeri őket
-    // (a `sub` formátuma `guest:<email>`, ami nem valid Google user ID). A guest
-    // hozzáférés egyetlen lifecycle kontrollja a JWT lejárata + a meghívó visszavonása
-    // a redeem ELŐTT.
+    // /sync-et hívunk vendégekre is — a worker oldali guest_revoked KV alapján
+    // tudja eldönteni, hogy az admin visszavonta-e a sessiont. Az iat alapján scoping:
+    // egy újabb (re-invite utáni) JWT iat-ja későbbi lesz mint a revocation timestamp,
+    // ezért az új session nem érintett.
     const syncIntervalMs = config.syncIntervalSeconds * 1000
-    const needsSync = !session.guest && (!session.lastSyncedAt || Date.now() - session.lastSyncedAt > syncIntervalMs)
+    const needsSync = !session.lastSyncedAt || Date.now() - session.lastSyncedAt > syncIntervalMs
     if (needsSync) {
       try {
-        const status = await syncUserStatus(config, session.sub)
+        const status = await syncUserStatus(config, session.sub, session.iat)
         if (status !== 'active') {
           const url = new URL(loginPath, originOf(req))
           url.searchParams.set('reason', status)

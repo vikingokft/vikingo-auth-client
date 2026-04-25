@@ -225,12 +225,13 @@ export function vikingoEdgeAuth(options: VikingoEdgeAuthOptions) {
       return redirect(loginUrl.toString(), headers)
     }
 
-    // Guest session-öket nem szinkronizáljuk: a Workspace Admin SDK nem ismeri őket.
+    // /sync-et hívunk vendégekre is — a worker `guest_revoked` KV alapján kirúgja
+    // a sessiont, ha admin visszavonta. Az iat scoping a re-invite eseteket megoldja.
     const syncIntervalMs = config.syncIntervalSeconds * 1000
-    const needsSync = !session.guest && (!session.lastSyncedAt || Date.now() - session.lastSyncedAt > syncIntervalMs)
+    const needsSync = !session.lastSyncedAt || Date.now() - session.lastSyncedAt > syncIntervalMs
     if (needsSync) {
       try {
-        const status = await syncUserStatus(config, session.sub)
+        const status = await syncUserStatus(config, session.sub, session.iat)
         if (status !== 'active') {
           const loginUrl = new URL(loginPath, originOf(req))
           loginUrl.searchParams.set('reason', status)

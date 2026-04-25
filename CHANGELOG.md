@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-04-25
+
+### Hozzáadva
+- **Vendég session revocation**. Az auth-server admin UI-ról egy beváltott meghívó "Visszavonás" gombja most ténylegesen kirúgja a vendéget — az auth-server egy `guest_revoked` KV rekordot ír, és a `/sync` endpoint vendég sub-ra ezt nézi. Ha a JWT `iat` <= `revokedAt`, a `/sync` `status=deleted`-et ad vissza, és a middleware kirúgja a sessiont. Worst-case latency = sync interval (default 5 perc).
+- **`syncUserStatus(config, sub, iat?)`** — új opcionális `iat` paraméter. A middleware-ek automatikusan átadják a session `iat`-ját.
+
+### Változott
+- **A `/sync` hívást vendég session-re is meghívjuk** (előzőleg skip-eltük). A worker az `iat`-ot összehasonlítja a revocation timestamppal — re-invite után a friss JWT `iat`-ja későbbi mint a régi revocation, így nem érintett.
+
+### Migráció
+
+Nincs törő változás. Frissítés: `npm update @vikingokft/auth-client`. Az új revocation funkció automatikusan él, ha az auth-server is `0.5.0+` verzión van (a v0.5.0+ `/sync` endpoint kezeli a vendég `iat`-ot). Régebbi auth-server az `iat` mezőt egyszerűen ignorálja, így biztonságos a frissítés.
+
 ## [0.6.0] - 2026-04-25
 
 ### Hozzáadva

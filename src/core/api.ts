@@ -28,12 +28,17 @@ export async function exchangeCodeForToken(
 export async function syncUserStatus(
   config: ResolvedConfig,
   sub: string,
+  iat?: number,
 ): Promise<SyncResponse['status']> {
-  const body: Record<string, string> = {
+  const body: Record<string, string | number> = {
     sub,
     client_id: config.appId,
   }
   if (config.clientSecret) body.client_secret = config.clientSecret
+  // Vendég session-höz: a worker /sync az iat-ot összeveti a guest_revoked rekord
+  // revokedAt-jával. Ha iat <= revokedAt, status=deleted, és a middleware kirúgja.
+  // Workspace user-eknél az iat-ot a worker figyelmen kívül hagyja.
+  if (typeof iat === 'number') body.iat = iat
 
   const res = await fetch(`${config.authServer}/sync`, {
     method: 'POST',
