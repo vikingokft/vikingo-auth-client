@@ -2,8 +2,8 @@ import { jwtVerify, SignJWT } from 'jose'
 import type { ResolvedConfig } from './config'
 import type { Session } from './types'
 
-// HKDF info string — versioned, so we can rotate session key derivation in the future
-// without breaking valid cookies signed by the old version (would need v2 fallback logic).
+// HKDF info string — verziózott, hogy a jövőben rotálható legyen a session key derivation
+// anélkül hogy a régi verzióval aláírt érvényes cookie-k tönkremennének (v2 esetén fallback logika kellene).
 const SESSION_KEY_INFO = 'vikingo-auth-session-v1'
 
 async function deriveFromSecret(secret: string): Promise<Uint8Array> {
@@ -15,9 +15,9 @@ async function deriveFromSecret(secret: string): Promise<Uint8Array> {
     false,
     ['deriveBits'],
   )
-  // Empty salt is intentional: we want a deterministic key per app, so the same
-  // input (clientSecret OR appId) always produces the same session-signing key.
-  // Different apps still get different keys because the input differs.
+  // Üres salt szándékos: per-app determinisztikus kulcsot akarunk, hogy ugyanaz az input
+  // (clientSecret VAGY appId) mindig ugyanazt a session-aláíró kulcsot adja. Különböző app-ok
+  // eltérő kulcsot kapnak, mert az input is eltér.
   const bits = await crypto.subtle.deriveBits(
     {
       name: 'HKDF',

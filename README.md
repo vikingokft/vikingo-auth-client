@@ -14,32 +14,29 @@ Nem kell `.npmrc`, nem kell token. (v0.5.0 és korábbi verziók GitHub Packages
 
 ## Használat Next.js-ben
 
-### 1. Regisztráld az appot a szerveren
+### 1. Regisztráld az appot
 
-```bash
-curl -X POST https://vikingoauth.hu/register \
-  -H "Authorization: Bearer $REGISTRATION_TOKEN" \
-  -H "content-type: application/json" \
-  -d '{
-    "app_id": "my-app",
-    "callback_urls": [
-      "https://my-app.vercel.app/auth/callback",
-      "http://localhost:3000/auth/callback"
-    ]
-  }'
-```
+Két opció — bővebben lásd [MIGRATION.md](MIGRATION.md):
 
-A válaszban kapott `client_secret`-et tedd a `.env.local`-ba.
+- **Auto-register (ajánlott v0.8.0+)**: tegyél egy `VIKINGO_AUTH_REGISTRATION_TOKEN` env vart Vercel team szinten. Az első production request beregisztrálja az app-ot.
+- **Kézi**: a [vikingoauth.hu/admin/apps](https://vikingoauth.hu/admin/apps) UI-on, vagy `curl -X POST .../register`.
 
 ### 2. Környezeti változók
 
+Vercel-en (auto-detect): semmi nem kötelező. Az `appId` a `VERCEL_GIT_REPO_SLUG`-ból jön, a session-aláíró kulcs az `appId`-ből deriválódik (HKDF-SHA256).
+
+Helyi fejlesztéshez (`.env.local`):
+
 ```bash
 VIKINGO_AUTH_APP_ID=my-app
-VIKINGO_AUTH_CLIENT_SECRET=<the-secret-from-register>
-VIKINGO_AUTH_SESSION_SECRET=<openssl rand -hex 32>
 ```
 
-### 3. `middleware.ts` — a repo gyökerében, VAGY `src/middleware.ts` ha `src/`-struktúrát használsz
+Opcionális (csak akkor add meg, ha tényleg külön akarod kezelni):
+
+- `VIKINGO_AUTH_CLIENT_SECRET` — extra auth réteg a Worker felé. v0.4.0+ óta nem kötelező.
+- `VIKINGO_AUTH_SESSION_SECRET` — felülírja a derived session-aláíró kulcsot.
+
+### 3. `middleware.ts` — `src/middleware.ts` ha `src/`-struktúrát használsz, VAGY a repo gyökerében
 
 > **Fontos**: ha Next.js `src/app/` vagy `src/pages/` struktúrát használsz, a `middleware.ts` **kötelezően** a `src/`-ben legyen. A gyökérbe tett `middleware.ts`-t a Next.js build csendben kihagyja (üres `middleware-manifest.json`) és az SSO nem fog aktiválódni, hiba nélkül.
 
@@ -47,9 +44,6 @@ VIKINGO_AUTH_SESSION_SECRET=<openssl rand -hex 32>
 import { vikingoAuth } from '@vikingokft/auth-client/next'
 
 export default vikingoAuth({
-  appId: process.env.VIKINGO_AUTH_APP_ID!,
-  clientSecret: process.env.VIKINGO_AUTH_CLIENT_SECRET!,
-  sessionSecret: process.env.VIKINGO_AUTH_SESSION_SECRET!,
   publicPaths: ['/api/public', /^\/_next\//, /\.(ico|png|svg|webp)$/],
 })
 
@@ -110,15 +104,12 @@ A vendég session-öket az auth-server admin UI-ról vissza lehet vonni — a mi
 import { getUser } from '@vikingokft/auth-client/next'
 
 export default async function Page() {
-  const user = await getUser({
-    appId: process.env.VIKINGO_AUTH_APP_ID!,
-    clientSecret: process.env.VIKINGO_AUTH_CLIENT_SECRET!,
-    sessionSecret: process.env.VIKINGO_AUTH_SESSION_SECRET!,
-  })
-
+  const user = await getUser({})
   return <div>Szia, {user?.name}!</div>
 }
 ```
+
+A config object üres lehet — minden mezőt env-ből vagy auto-detect-ből resolvál. Ha a kliens vendég-meghívóval lépett be, `user.guest === true`.
 
 Vagy ha csak gyors user info kell (middleware által beállított header-ből):
 
@@ -135,7 +126,6 @@ import { requireSSO } from '@vikingokft/auth-client/cli'
 
 const user = await requireSSO({
   appId: 'my-cli-tool',
-  clientSecret: process.env.VIKINGO_AUTH_CLIENT_SECRET!,
 })
 
 console.log(`Belépve mint ${user.email}`)
@@ -180,4 +170,5 @@ npm run build       # Build to dist/
 ## Kapcsolódó repók
 
 - [vikingo-auth-server](https://github.com/vikingokft/vikingo-auth-server) — a központi szerver (Cloudflare Worker)
-- [vikingo-auth-template](https://github.com/vikingokft/vikingo-auth-template) — új Next.js app sablon SSO-val (tervezett)
+- [vikingo-auth-template](https://github.com/vikingokft/vikingo-auth-template) — Next.js sablon új SSO appok indításához (a csomagot már tartalmazza, a `middleware.ts` a helyén van)
+- [vikingo-auth-wordpress](https://github.com/vikingokft/vikingo-auth-wordpress) — WordPress plugin (PHP, nem ezt a csomagot használja, de ugyanahhoz a workerhez csatlakozik)

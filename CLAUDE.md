@@ -171,10 +171,13 @@ A consumer repók `.github/dependabot.yml` config-ja csoportba szedi a `@vikingo
 
 ## Konvenciók
 
-- Strict TypeScript: `noUncheckedIndexedAccess`, `verbatimModuleSyntax`
-- Build: `tsc -p tsconfig.build.json` → `dist/` (declaration + sourcemap)
-- Test: nincs még (TODO: vitest)
-- Commit üzenetek: angol imperatívusz, `feat:` / `fix:` / `chore:` / `docs:`
+- **Identifierek**: angol (camelCase / PascalCase). Public API export, type, függvénynév angolul.
+- **Kommentek**: magyarul, csak ha a *miért* nem-triviális. Ne magyarázd el a *mit* — a név megteszi.
+- **User-facing szöveg** (README, CHANGELOG, MIGRATION, error message-ek): magyarul.
+- **Strict TypeScript**: `noUncheckedIndexedAccess`, `verbatimModuleSyntax`.
+- **Build**: `tsc -p tsconfig.build.json` → `dist/` (declaration + sourcemap).
+- **Test**: vitest, `npm test`. Új feature-höz teszt kötelező.
+- **Commit üzenetek**: angol imperatívusz, `feat:` / `fix:` / `chore:` / `docs:`.
 
 ---
 
@@ -186,3 +189,18 @@ A consumer repók `.github/dependabot.yml` config-ja csoportba szedi a `@vikingo
 | Új middleware option | mindkét middleware-ben + `VikingoAuthOptions` / `VikingoEdgeAuthOptions` |
 | Új session field | `src/core/types.ts` `Session` + a packSession aktualizál |
 | CLI port változtatás | `src/cli/index.ts` default `localPort` |
+| Új JWT claim támogatás | `src/core/verify.ts` `verifyAuthJwt` + `src/core/types.ts` |
+| Auto-register viselkedés | `src/core/api.ts` `autoRegisterApp` + a két middleware indítóblokkja |
+| Új release | `package.json` version bump + `CHANGELOG.md` szekció + `MIGRATION.md` ha breaking → push main → npm publish auto (GitHub Actions, Trusted Publishing) |
+
+---
+
+## Cross-repo workflow
+
+Ez a csomag a [`vikingo-auth-server`](https://github.com/vikingokft/vikingo-auth-server) endpoint-jaira épít. A teljes "új feature bevezetése" workflow a **server CLAUDE.md "Új feature bevezetése (cross-repo workflow)"** szekciójában él — az a kanonikus referencia.
+
+Pár csomag-specifikus szabály:
+
+- **Server-funkciókhoz mindig csak akkor adj hozzá kliens-támogatást, amikor a server már live**. Pl. új `/sync` query param használata előtt: deploy a server, csak utána publish a kliens minor release-t.
+- **Backwards compat**: új public API-k (export, options) MINOR bump (0.x → 0.x+1). Régi API jelszintű viselkedés-változás MAJOR. A `Session` típus mező-hozzáadás MINOR (csak read-only); mező-törlés MAJOR.
+- **Kompatibilitási mátrix**: a server CLAUDE.md verzió-tábláját kell vezetni — itt nem duplikáljuk.
