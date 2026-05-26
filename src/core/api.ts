@@ -63,27 +63,60 @@ export function buildAuthorizeUrl(config: ResolvedConfig, returnTo: string): str
 }
 
 /**
- * Idempotens auto-regisztráció. Ellenőrzi a `GET /register/:appId`-vel hogy az app
- * létezik-e a registry-ben, és ha nem (404), POST-tal felveszi `app_id`, `callback_urls`
- * és `allow_guest_invites: true` beállítással.
+ * Idempotens auto-regisztráció + callback URL szinkronizáció.
+ *
+ * 1. `GET /register/:appId` — létezik-e az app a registry-ben?
+ *    - 404 → `POST /register` új app-pal (`callback_urls: [callbackUrl]`, `allow_guest_invites: true`)
+ *    - 200 + a `callbackUrl` MÁR a listában → no-op
+ *    - 200 + a `callbackUrl` HIÁNYZIK → `PATCH /register/:appId` additív hozzáadással
+ *
+ * Az additív PATCH azt a use-case-t fedi le, amikor egy meglévő app új domain alias-t
+ * kap (pl. `meta-lead-to-ac.vercel.app` mellé `meta-lead-to-ac.vikingoapp.hu`) — különben
+ * a `/authorize` `invalid_return_url`-rel utasítaná vissza az új URL-ről induló flow-t.
  *
  * `registrationToken`-t a hívó adja át (env var-ból). Auth-client middleware-ek
  * lazy-n hívják a startup-on, ha a `VIKINGO_AUTH_REGISTRATION_TOKEN` env be van állítva.
  *
- * @returns `alreadyRegistered: true` ha az app már létezett (no-op), különben `false`.
+ * @returns `alreadyRegistered` — true, ha az app már létezett (akár no-op, akár PATCH); false ha most jött létre.
+ *          `callbackAdded` — true, ha a PATCH új URL-t adott a listához.
  */
 export async function autoRegisterApp(
   config: ResolvedConfig,
   callbackUrl: string,
   registrationToken: string,
-): Promise<{ alreadyRegistered: boolean }> {
+): Promise<{ alreadyRegistered: boolean; callbackAdded: boolean }> {
   const checkRes = await fetch(
     `${config.authServer}/register/${encodeURIComponent(config.appId)}`,
     { headers: { authorization: `Bearer ${registrationToken}` } },
   )
+
   if (checkRes.status === 200) {
-    return { alreadyRegistered: true }
+    const existing = (await checkRes.json().catch(() => null)) as
+      | { callback_urls?: string[] }
+      | null
+    const urls = existing?.callback_urls ?? []
+    if (urls.includes(callbackUrl)) {
+      return { alreadyRegistered: true, callbackAdded: false }
+    }
+
+    const patchRes = await fetch(
+      `${config.authServer}/register/${encodeURIComponent(config.appId)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          authorization: `Bearer ${registrationToken}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ callback_urls: [...urls, callbackUrl] }),
+      },
+    )
+    if (!patchRes.ok) {
+      const text = await patchRes.text().catch(() => '')
+      throw new Error(`auto-register PATCH failed (${patchRes.status}): ${text}`)
+    }
+    return { alreadyRegistered: true, callbackAdded: true }
   }
+
   if (checkRes.status !== 404) {
     const text = await checkRes.text().catch(() => '')
     throw new Error(`auto-register check failed (${checkRes.status}): ${text}`)
@@ -105,5 +138,5 @@ export async function autoRegisterApp(
     const text = await regRes.text().catch(() => '')
     throw new Error(`auto-register failed (${regRes.status}): ${text}`)
   }
-  return { alreadyRegistered: false }
+  return { alreadyRegistered: false, callbackAdded: true }
 }

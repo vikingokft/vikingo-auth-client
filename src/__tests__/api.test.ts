@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { resolveConfig } from '../core/config'
-import { buildAuthorizeUrl, exchangeCodeForToken, syncUserStatus } from '../core/api'
+import { autoRegisterApp, buildAuthorizeUrl, exchangeCodeForToken, syncUserStatus } from '../core/api'
 
 describe('buildAuthorizeUrl', () => {
   it('constructs the right URL with app + return params', () => {
@@ -99,5 +99,94 @@ describe('syncUserStatus', () => {
     )
     const config = resolveConfig({ appId: 'x' })
     await expect(syncUserStatus(config, 'sub')).rejects.toThrow(/sync failed/)
+  })
+})
+
+describe('autoRegisterApp', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('POSTs new app when registry returns 404', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('not found', { status: 404 }))
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const config = resolveConfig({ appId: 'my-app' })
+    const res = await autoRegisterApp(config, 'https://a.example/auth/callback', 'tok')
+
+    expect(res).toEqual({ alreadyRegistered: false, callbackAdded: true })
+    expect(fetchMock.mock.calls).toHaveLength(2)
+    const [, postInit] = fetchMock.mock.calls[1] as [string, RequestInit]
+    expect(postInit.method).toBe('POST')
+    const body = JSON.parse(postInit.body as string)
+    expect(body.callback_urls).toEqual(['https://a.example/auth/callback'])
+  })
+
+  it('no-ops when callback URL is already registered', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          status: 'active',
+          app_id: 'my-app',
+          callback_urls: ['https://a.example/auth/callback'],
+        }),
+        { status: 200 },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const config = resolveConfig({ appId: 'my-app' })
+    const res = await autoRegisterApp(config, 'https://a.example/auth/callback', 'tok')
+
+    expect(res).toEqual({ alreadyRegistered: true, callbackAdded: false })
+    expect(fetchMock.mock.calls).toHaveLength(1)
+  })
+
+  it('PATCHes additively when a new callback URL appears for an existing app', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: 'active',
+            app_id: 'my-app',
+            callback_urls: ['https://a.example/auth/callback'],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const config = resolveConfig({ appId: 'my-app' })
+    const res = await autoRegisterApp(config, 'https://b.example/auth/callback', 'tok')
+
+    expect(res).toEqual({ alreadyRegistered: true, callbackAdded: true })
+    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit]
+    expect(url).toBe('https://vikingoauth.hu/register/my-app')
+    expect(init.method).toBe('PATCH')
+    const body = JSON.parse(init.body as string)
+    expect(body.callback_urls).toEqual([
+      'https://a.example/auth/callback',
+      'https://b.example/auth/callback',
+    ])
+  })
+
+  it('throws if PATCH fails', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ callback_urls: ['https://a/auth/callback'] }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response('boom', { status: 500 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const config = resolveConfig({ appId: 'my-app' })
+    await expect(autoRegisterApp(config, 'https://b/auth/callback', 'tok')).rejects.toThrow(
+      /auto-register PATCH failed/,
+    )
   })
 })

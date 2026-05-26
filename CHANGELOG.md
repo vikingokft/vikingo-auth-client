@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-05-26
+
+### Hozzáadva
+- **Auto-szinkronizáló callback URL-ek**. Az `autoRegisterApp` mostantól **nem csak akkor regisztrál**, ha az app még nem létezik — hanem akkor is **additívan PATCH-eli** a `callback_urls` listát, ha az app létezik, de a jelenlegi request callback URL-je még nem szerepel benne. Ez megoldja azt a gyakori esetet, amikor egy meglévő app új domain alias-t kap (pl. `*.vercel.app` mellé `*.vikingoapp.hu`) — eddig manuálisan kellett az admin UI-on hozzáadni, most az első request automatikusan beregisztrálja.
+- **`autoRegisterApp` return shape** kibővítve: `{ alreadyRegistered, callbackAdded }` (eddig csak `alreadyRegistered`). A `callbackAdded` jelzi, hogy a hívás során új URL került a listára (akár új app POST-tal, akár létező app PATCH-csal).
+
+### Változott
+- **A middleware az aktuális request origin-jét regisztrálja**, nem a `VERCEL_PROJECT_PRODUCTION_URL`-t. Korábban a v0.8.0-s viselkedés mindig a Vercel által adott prod hostnevet (`my-app.vercel.app`) használta — emiatt egy custom domain alias (pl. `app.vikingoapp.hu`) sosem került be a registry-be, és a `/authorize` `invalid_return_url`-rel utasította vissza. Mostantól minden host saját maga regisztrálja magát az első odairányuló request-tel, ami pontosan illeszkedik a `handleLogin` `originOf(req)` logikájához.
+- **Per-callback-URL auto-register cache**. Az eddigi egyetlen modul-szintű promise helyett `Map<callbackUrl, Promise>` — így a worker élettartama alatt minden külön host pontosan egyszer regisztrálódik (alias-okhoz nem szükséges restart).
+- A `VERCEL_ENV !== 'production'` guard változatlan: preview/development deploy-ok továbbra se írnak a registry-be.
+
+### Biztonság
+A változás nem nyit új támadási felületet. Az auto-register továbbra is a `VIKINGO_AUTH_REGISTRATION_TOKEN` Workspace-secret birtokában fut, és a `/authorize` flow Google Workspace SSO gate-je külső támadót nem enged sessiont szerezni — még egy rosszindulatúan regisztrált callback URL-en keresztül sem.
+
+### Migráció
+Nincs törő változás API szinten. Ha v0.8.0-ról frissítesz és már regisztrálva volt az app:
+- Az eddig regisztrált `VERCEL_PROJECT_PRODUCTION_URL` URL benne marad — semmi nem törlődik
+- Az alias-ok automatikusan PATCH-elődnek, ahogy az első request érkezik rajtuk
+- Ha a Vercel prod URL-t NEM akarod a listán, manuálisan eltávolíthatod az admin UI-on
+
 ## [0.8.0] - 2026-04-25
 
 ### Hozzáadva

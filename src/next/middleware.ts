@@ -11,41 +11,43 @@ import { packSession, unpackSession } from '../core/session'
 import { syncUserStatus } from '../core/api'
 import { verifyAuthJwt } from '../core/verify'
 
-// Auto-register state — a middleware első hívásakor egy lazy promise indul.
-// Sikeres lefutás után többször nem fut. Hiba esetén null-ra állítjuk vissza,
-// így a következő request újrapróbálja (transient network hiba esetén öngyógyul).
-let autoRegisterPromise: Promise<void> | null = null
+// Auto-register state — per-callback-URL cache. Worker élettartamára minden host-ra
+// pontosan egy register-attempt fut. Hiba esetén töröljük a bejegyzést, így a következő
+// request újrapróbálja (transient network hiba → öngyógyul). Több host (custom domain alias)
+// külön bejegyzést kap, mindegyik a saját URL-jét PATCH-eli a callback_urls listához.
+const autoRegisterAttempts = new Map<string, Promise<void>>()
 
-function deriveProductionCallbackUrl(req: NextRequest, callbackPath: string): string {
-  // Vercel-en a `VERCEL_PROJECT_PRODUCTION_URL` a kanonikus production domain (pl. "my-app.vercel.app").
-  // Mindig ezt preferáljuk, hogy preview deploy-ok ne regisztrálják a saját preview URL-jüket.
-  const env = typeof process !== 'undefined' && process.env ? process.env : undefined
-  const prod = env?.VERCEL_PROJECT_PRODUCTION_URL
-  if (prod) return `https://${prod}${callbackPath}`
-  // Fallback: request origin (self-hosted / nem Vercel)
+function deriveRequestCallbackUrl(req: NextRequest, callbackPath: string): string {
+  // A request tényleges origin-jét regisztráljuk — így a custom domain alias-ok (pl.
+  // `app.vikingoapp.hu` a `*.vercel.app` mellé) automatikusan bekerülnek a callback_urls
+  // listába az első odairányuló request-tel. A `handleLogin` ugyanezt az origin-t használja
+  // a `/authorize?return=...` paraméternek, tehát a regisztráció és a használat összhangban van.
   const proto = req.headers.get('x-forwarded-proto') ?? 'https'
   const host = req.headers.get('host') ?? req.nextUrl.host
   return `${proto}://${host}${callbackPath}`
 }
 
 function tryAutoRegister(config: ResolvedConfig, callbackUrl: string): void {
-  if (autoRegisterPromise) return
+  if (autoRegisterAttempts.has(callbackUrl)) return
   const env = typeof process !== 'undefined' && process.env ? process.env : undefined
   const token = env?.VIKINGO_AUTH_REGISTRATION_TOKEN
   if (!token) return
   // Csak production environmentben próbálkozzunk Vercel-en — preview/development
   // deploy-ok ne kommiteljenek production registry-be a saját URL-jükkel.
   if (env?.VERCEL_ENV && env.VERCEL_ENV !== 'production') return
-  autoRegisterPromise = autoRegisterApp(config, callbackUrl, token)
+  const promise = autoRegisterApp(config, callbackUrl, token)
     .then((res) => {
       if (!res.alreadyRegistered) {
         console.log(`[vikingo-auth] auto-registered app ${config.appId} (${callbackUrl})`)
+      } else if (res.callbackAdded) {
+        console.log(`[vikingo-auth] added new callback URL for ${config.appId}: ${callbackUrl}`)
       }
     })
     .catch((err) => {
       console.error('[vikingo-auth] auto-register failed (will retry):', err)
-      autoRegisterPromise = null
+      autoRegisterAttempts.delete(callbackUrl)
     })
+  autoRegisterAttempts.set(callbackUrl, promise)
 }
 
 function randomNonce(): string {
@@ -234,7 +236,7 @@ export function vikingoAuth(options: VikingoAuthOptions) {
     // Lazy auto-register — fire-and-forget. Modul-szintű promise-ban cache-eljük,
     // így worker élettartamára egyszer fut. Hiba esetén a következő request újrapróbálja.
     try {
-      tryAutoRegister(getConfig(), deriveProductionCallbackUrl(req, callbackPath))
+      tryAutoRegister(getConfig(), deriveRequestCallbackUrl(req, callbackPath))
     } catch {
       // getConfig() throw-olhat ha appId nincs feloldva — lentebb a normál config error path
       // úgyis kezeli, itt csendben elnyomjuk hogy ne blokkolja a request-et.

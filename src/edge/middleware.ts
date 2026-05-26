@@ -10,13 +10,10 @@ import { packSession, unpackSession } from '../core/session'
 import type { Session } from '../core/types'
 import { verifyAuthJwt } from '../core/verify'
 
-// Auto-register state — lásd next/middleware.ts a részletes magyarázatért.
-let autoRegisterPromise: Promise<void> | null = null
+// Auto-register state — per-callback-URL cache. Lásd next/middleware.ts kommentje.
+const autoRegisterAttempts = new Map<string, Promise<void>>()
 
-function deriveProductionCallbackUrlEdge(req: Request, callbackPath: string): string {
-  const env = typeof process !== 'undefined' && process.env ? process.env : undefined
-  const prod = env?.VERCEL_PROJECT_PRODUCTION_URL
-  if (prod) return `https://${prod}${callbackPath}`
+function deriveRequestCallbackUrlEdge(req: Request, callbackPath: string): string {
   const url = new URL(req.url)
   const proto = req.headers.get('x-forwarded-proto') ?? url.protocol.replace(':', '')
   const host = req.headers.get('host') ?? url.host
@@ -24,21 +21,24 @@ function deriveProductionCallbackUrlEdge(req: Request, callbackPath: string): st
 }
 
 function tryAutoRegisterEdge(config: ResolvedConfig, callbackUrl: string): void {
-  if (autoRegisterPromise) return
+  if (autoRegisterAttempts.has(callbackUrl)) return
   const env = typeof process !== 'undefined' && process.env ? process.env : undefined
   const token = env?.VIKINGO_AUTH_REGISTRATION_TOKEN
   if (!token) return
   if (env?.VERCEL_ENV && env.VERCEL_ENV !== 'production') return
-  autoRegisterPromise = autoRegisterApp(config, callbackUrl, token)
+  const promise = autoRegisterApp(config, callbackUrl, token)
     .then((res) => {
       if (!res.alreadyRegistered) {
         console.log(`[vikingo-auth] auto-registered app ${config.appId} (${callbackUrl})`)
+      } else if (res.callbackAdded) {
+        console.log(`[vikingo-auth] added new callback URL for ${config.appId}: ${callbackUrl}`)
       }
     })
     .catch((err) => {
       console.error('[vikingo-auth] auto-register failed (will retry):', err)
-      autoRegisterPromise = null
+      autoRegisterAttempts.delete(callbackUrl)
     })
+  autoRegisterAttempts.set(callbackUrl, promise)
 }
 
 function randomNonce(): string {
@@ -223,7 +223,7 @@ export function vikingoEdgeAuth(options: VikingoEdgeAuthOptions) {
   return async function middleware(req: Request): Promise<Response | undefined> {
     // Lazy auto-register — modul-szintű promise cache, fire-and-forget.
     try {
-      tryAutoRegisterEdge(getConfig(), deriveProductionCallbackUrlEdge(req, callbackPath))
+      tryAutoRegisterEdge(getConfig(), deriveRequestCallbackUrlEdge(req, callbackPath))
     } catch {
       // config error path lentebb kezeli
     }
