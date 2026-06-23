@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-23
+
+### Hozzáadva
+- **Reziliens fetch minden auth-szerver hívásra** (`src/core/fetch.ts` → `resilientFetch`). Minden `vikingoauth.hu` felé menő kérés mostantól **timeoutot** (`AbortSignal.timeout`) és **átmeneti kapcsolati hibára korlátozott retry-t** kap:
+  - `exchangeCodeForToken` (`/token`): 8s timeout, 1 retry
+  - `syncUserStatus` (`/sync`): 5s timeout, 1 retry
+  - `autoRegisterApp` (`/register` GET/PATCH/POST): 5s timeout, 2 retry (fire-and-forget hívó)
+  - JWKS-lekérés (`verify.ts`, jose `createRemoteJWKSet`): `timeoutDuration: 8000`
+- A retry **kizárólag transport-szintű hibára** fut (ECONNRESET, ETIMEDOUT, ECONNREFUSED, EAI_AGAIN, EPIPE, undici connect/socket hibák, valamint a timeout abortja). HTTP-státuszra (4xx/5xx) **nincs** retry — azt változatlanul a hívó `!res.ok` ága kezeli, így a szerver-oldali elutasítás szemantikája nem változik.
+
+### Miért
+A `vikingoauth.hu` Cloudflare Workers-en fut, a TLS a CF edge-én terminálódik. Egy átmeneti edge-reset néha a TLS-kézfogás közben jelentkezik (`Client network socket disconnected before secure TLS connection was established`, ECONNRESET) — ilyenkor a kérés el sem indul. Eddig timeout/retry hiányában egy ilyen pillanatnyi hiba a login-flow awaitelt hívásán a böngésző alap socket-timeoutjáig "befagyasztotta" a belépést. Egy retry láthatatlanul elnyeli ezt; a timeout pedig a végtelen lógást gyors, egyértelmű hibára cseréli.
+
+### Migráció
+Nincs törő változás, nincs új konfiguráció. `0.9.0`-ról `pnpm update @vikingokft/auth-client@^0.10.0` (vagy a megfelelő package manager) és redeploy elég.
+
 ## [0.9.0] - 2026-05-26
 
 ### Hozzáadva

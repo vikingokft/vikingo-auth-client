@@ -7,7 +7,10 @@ const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>()
 function getJwks(authServer: string) {
   let jwks = jwksCache.get(authServer)
   if (!jwks) {
-    jwks = createRemoteJWKSet(new URL(`${authServer}/jwks.json`))
+    // timeoutDuration: egy beragadt JWKS-lekérés ne lógjon végtelenül (a jose maga cache-eli
+    // a kulcsokat, így ez a fetch ritka — a login-callback awaitelt útján fut, ezért fontos
+    // hogy hiba esetén gyorsan dobjon, ne fagyassza a belépést).
+    jwks = createRemoteJWKSet(new URL(`${authServer}/jwks.json`), { timeoutDuration: 8000 })
     jwksCache.set(authServer, jwks)
   }
   return jwks

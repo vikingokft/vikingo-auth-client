@@ -1,5 +1,6 @@
 import type { ResolvedConfig } from './config'
 import type { SyncResponse, TokenResponse } from './types'
+import { resilientFetch } from './fetch'
 
 export async function exchangeCodeForToken(
   config: ResolvedConfig,
@@ -11,11 +12,17 @@ export async function exchangeCodeForToken(
   }
   if (config.clientSecret) body.client_secret = config.clientSecret
 
-  const res = await fetch(`${config.authServer}/token`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+  // A /token egy egyszer használatos code-ot vált be. A retry biztonságos: a tranziens
+  // hiba a TLS-kézfogás közben (a kérés elküldése ELŐTT) keletkezik, így a code érintetlen.
+  const res = await resilientFetch(
+    `${config.authServer}/token`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    { timeoutMs: 8000, retries: 1 },
+  )
 
   if (!res.ok) {
     const errBody = await res.text().catch(() => '')
@@ -40,11 +47,18 @@ export async function syncUserStatus(
   // Workspace user-eknél az iat-ot a worker figyelmen kívül hagyja.
   if (typeof iat === 'number') body.iat = iat
 
-  const res = await fetch(`${config.authServer}/sync`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+  // A /sync minden requesten futhat (5 percenként) → szűkebb timeout, hogy egy lassú/flaky
+  // szerver ne növelje érdemben a request-latenciát. Fail-open default mellett a hiba nem
+  // blokkol; failClosedOnSyncError=true esetén a middleware login-redirecttel kezeli.
+  const res = await resilientFetch(
+    `${config.authServer}/sync`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    { timeoutMs: 5000, retries: 1 },
+  )
 
   if (!res.ok) {
     throw new Error(`sync failed (${res.status})`)
@@ -85,9 +99,13 @@ export async function autoRegisterApp(
   callbackUrl: string,
   registrationToken: string,
 ): Promise<{ alreadyRegistered: boolean; callbackAdded: boolean }> {
-  const checkRes = await fetch(
+  // Fire-and-forget hívó (middleware) → nyugodtan próbálkozhat többször tranziens hibára.
+  const REG_OPTS = { timeoutMs: 5000, retries: 2 } as const
+
+  const checkRes = await resilientFetch(
     `${config.authServer}/register/${encodeURIComponent(config.appId)}`,
     { headers: { authorization: `Bearer ${registrationToken}` } },
+    REG_OPTS,
   )
 
   if (checkRes.status === 200) {
@@ -99,7 +117,7 @@ export async function autoRegisterApp(
       return { alreadyRegistered: true, callbackAdded: false }
     }
 
-    const patchRes = await fetch(
+    const patchRes = await resilientFetch(
       `${config.authServer}/register/${encodeURIComponent(config.appId)}`,
       {
         method: 'PATCH',
@@ -109,6 +127,7 @@ export async function autoRegisterApp(
         },
         body: JSON.stringify({ callback_urls: [...urls, callbackUrl] }),
       },
+      REG_OPTS,
     )
     if (!patchRes.ok) {
       const text = await patchRes.text().catch(() => '')
@@ -122,18 +141,22 @@ export async function autoRegisterApp(
     throw new Error(`auto-register check failed (${checkRes.status}): ${text}`)
   }
 
-  const regRes = await fetch(`${config.authServer}/register`, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${registrationToken}`,
-      'content-type': 'application/json',
+  const regRes = await resilientFetch(
+    `${config.authServer}/register`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${registrationToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        app_id: config.appId,
+        callback_urls: [callbackUrl],
+        allow_guest_invites: true,
+      }),
     },
-    body: JSON.stringify({
-      app_id: config.appId,
-      callback_urls: [callbackUrl],
-      allow_guest_invites: true,
-    }),
-  })
+    REG_OPTS,
+  )
   if (!regRes.ok) {
     const text = await regRes.text().catch(() => '')
     throw new Error(`auto-register failed (${regRes.status}): ${text}`)
