@@ -2,6 +2,17 @@
 
 Kliens oldali csomag a [vikingo-auth-server](https://github.com/vikingokft/vikingo-auth-server) szerverhez. Drop-in Google Workspace SSO Next.js appokhoz és Node CLI eszközökhöz.
 
+## 🗺️ A Vikingo SSO 4 repóból áll — melyik mire való
+
+| Repo | Mi ez | Mikor nyúlsz hozzá |
+|---|---|---|
+| [vikingo-auth-server](https://github.com/vikingokft/vikingo-auth-server) | Központi szerver a `vikingoauth.hu`-n — a Google-bejelentkezés agya: JWT, user-lifecycle, admin UI. | **Egyszer, örökre.** Már fut; új eszközhöz NEM nyúlsz hozzá. |
+| [@vikingokft/auth-client](https://github.com/vikingokft/vikingo-auth-client) 👈 **ITT VAGY** | npm csomag (kódkönyvtár) Next.js / Node appokhoz. | **Meglévő** Next.js appot kötsz SSO-ra. |
+| [vikingo-auth-template](https://github.com/vikingokft/vikingo-auth-template) | Kész Next.js starter, a client már bedrótozva. | **Új** Next.js eszközt *kezdesz* (ebből klónozol). |
+| [vikingo-auth-wordpress](https://github.com/vikingokft/vikingo-auth-wordpress) | WordPress plugin (PHP) — a client WP-s megfelelője. | **WordPress** oldalt kötsz SSO-ra. |
+
+**Telepítéskor mindig csak EGYET érintesz:** új Next.js → *template* · meglévő Next.js → *client* (ez) · WordPress → *wordpress plugin*. A *server* már él.
+
 ## Telepítés
 
 A csomag **public npm**-en él, auth nélkül pull-olható:
